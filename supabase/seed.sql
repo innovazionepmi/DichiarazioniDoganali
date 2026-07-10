@@ -1,0 +1,2 @@
+-- Dati di sviluppo locale SOLO fittizi. Non committare mai credenziali reali
+-- o dati di clienti reali in questo file: viene versionato in Git.
