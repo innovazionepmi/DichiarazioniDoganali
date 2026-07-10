@@ -55,7 +55,10 @@ export function ImpiantoForm({
       diritto_licenza_dovuto: false,
       diritto_licenza_importo: "",
       ha_registro_letture: false,
-      indirizzo_impianto: "",
+      indirizzo_via: "",
+      indirizzo_cap: "",
+      indirizzo_citta: "",
+      indirizzo_provincia: "",
       potenza_kw: "",
       codice_distributore_zona: "",
       codice_catastale_comune: "",
@@ -191,12 +194,54 @@ export function ImpiantoForm({
               </FormItem>
             )}
           />
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-4">
           <FormField
             control={form.control}
-            name="indirizzo_impianto"
+            name="indirizzo_via"
+            render={({ field }) => (
+              <FormItem className="sm:col-span-2">
+                <FormLabel>Via impianto (con numero civico)</FormLabel>
+                <FormControl>
+                  <Input {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="indirizzo_cap"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Indirizzo impianto</FormLabel>
+                <FormLabel>CAP</FormLabel>
+                <FormControl>
+                  <Input {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="indirizzo_provincia"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Provincia</FormLabel>
+                <FormControl>
+                  <Input placeholder="es. TV" maxLength={4} {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="indirizzo_citta"
+            render={({ field }) => (
+              <FormItem className="sm:col-span-3">
+                <FormLabel>Città impianto</FormLabel>
                 <FormControl>
                   <Input {...field} />
                 </FormControl>

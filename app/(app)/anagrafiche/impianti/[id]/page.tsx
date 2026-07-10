@@ -72,7 +72,10 @@ export default async function ImpiantoDetailPage({
             diritto_licenza_importo:
               impianto.diritto_licenza_importo?.toString() ?? "",
             ha_registro_letture: impianto.ha_registro_letture,
-            indirizzo_impianto: impianto.indirizzo_impianto ?? "",
+            indirizzo_via: impianto.indirizzo_via ?? "",
+            indirizzo_cap: impianto.indirizzo_cap ?? "",
+            indirizzo_citta: impianto.indirizzo_citta ?? "",
+            indirizzo_provincia: impianto.indirizzo_provincia ?? "",
             potenza_kw: impianto.potenza_kw?.toString() ?? "",
             codice_distributore_zona: impianto.codice_distributore_zona ?? "",
             codice_catastale_comune: impianto.codice_catastale_comune ?? "",
