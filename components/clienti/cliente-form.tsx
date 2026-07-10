@@ -47,7 +47,10 @@ export function ClienteForm({
       referente_telefono: "",
       referente_email: "",
       referente_data_nascita: "",
-      indirizzo: "",
+      indirizzo_via: "",
+      indirizzo_cap: "",
+      indirizzo_citta: "",
+      indirizzo_provincia: "",
       partner_id: "",
       note: "",
       ...defaultValues,
@@ -218,19 +221,60 @@ export function ClienteForm({
           />
         </div>
 
-        <FormField
-          control={form.control}
-          name="indirizzo"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Indirizzo cliente</FormLabel>
-              <FormControl>
-                <Input {...field} />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
+        <div className="grid gap-4 sm:grid-cols-4">
+          <FormField
+            control={form.control}
+            name="indirizzo_via"
+            render={({ field }) => (
+              <FormItem className="sm:col-span-2">
+                <FormLabel>Via (con numero civico)</FormLabel>
+                <FormControl>
+                  <Input {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="indirizzo_cap"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>CAP</FormLabel>
+                <FormControl>
+                  <Input {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="indirizzo_provincia"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Provincia</FormLabel>
+                <FormControl>
+                  <Input placeholder="es. TV" maxLength={4} {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="indirizzo_citta"
+            render={({ field }) => (
+              <FormItem className="sm:col-span-3">
+                <FormLabel>Città</FormLabel>
+                <FormControl>
+                  <Input {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </div>
 
         <FormField
           control={form.control}

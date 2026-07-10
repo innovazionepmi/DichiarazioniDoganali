@@ -48,7 +48,10 @@ export default async function ImpiantiListPage({
     <div className="grid gap-4">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold">Impianti</h1>
-        <Button render={<Link href="/anagrafiche/impianti/nuovo">Nuovo impianto</Link>} />
+        <Button
+          nativeButton={false}
+          render={<Link href="/anagrafiche/impianti/nuovo">Nuovo impianto</Link>}
+        />
       </div>
       <PartnerFilter partnerOptions={partnerOptions ?? []} />
       <ImpiantoTable

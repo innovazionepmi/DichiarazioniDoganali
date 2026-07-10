@@ -18,7 +18,10 @@ export const clienteSchema = z.object({
     .optional()
     .or(z.literal("")),
   referente_data_nascita: optionalText(10),
-  indirizzo: optionalText(500),
+  indirizzo_via: optionalText(255),
+  indirizzo_cap: optionalText(10),
+  indirizzo_citta: optionalText(128),
+  indirizzo_provincia: optionalText(4),
   partner_id: z.string().uuid().optional().or(z.literal("")),
   note: optionalText(2000),
 })

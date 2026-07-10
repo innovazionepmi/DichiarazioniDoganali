@@ -80,7 +80,7 @@ export default async function ImpiantoDetailPage({
             codice_impianto_f24: impianto.codice_impianto_f24 ?? "",
             note: impianto.note ?? "",
           }}
-          onSubmit={(formData) => updateImpianto(id, formData)}
+          onSubmit={updateImpianto.bind(null, id)}
         />
       </div>
 

@@ -45,7 +45,10 @@ export default async function ClientiListPage({
     <div className="grid gap-4">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold">Clienti</h1>
-        <Button render={<Link href="/anagrafiche/clienti/nuovo">Nuovo cliente</Link>} />
+        <Button
+          nativeButton={false}
+          render={<Link href="/anagrafiche/clienti/nuovo">Nuovo cliente</Link>}
+        />
       </div>
       <PartnerFilter partnerOptions={partnerOptions ?? []} />
       <ClienteTable

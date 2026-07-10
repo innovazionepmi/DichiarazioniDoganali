@@ -17,7 +17,10 @@ function toPayload(data: ClienteInput) {
     referente_telefono: data.referente_telefono || null,
     referente_email: data.referente_email || null,
     referente_data_nascita: data.referente_data_nascita || null,
-    indirizzo: data.indirizzo || null,
+    indirizzo_via: data.indirizzo_via || null,
+    indirizzo_cap: data.indirizzo_cap || null,
+    indirizzo_citta: data.indirizzo_citta || null,
+    indirizzo_provincia: data.indirizzo_provincia || null,
     partner_id: data.partner_id || null,
     note: data.note || null,
   }
@@ -33,7 +36,10 @@ function parseFormData(formData: FormData) {
     referente_telefono: formData.get("referente_telefono") ?? "",
     referente_email: formData.get("referente_email") ?? "",
     referente_data_nascita: formData.get("referente_data_nascita") ?? "",
-    indirizzo: formData.get("indirizzo") ?? "",
+    indirizzo_via: formData.get("indirizzo_via") ?? "",
+    indirizzo_cap: formData.get("indirizzo_cap") ?? "",
+    indirizzo_citta: formData.get("indirizzo_citta") ?? "",
+    indirizzo_provincia: formData.get("indirizzo_provincia") ?? "",
     partner_id: formData.get("partner_id") ?? "",
     note: formData.get("note") ?? "",
   })

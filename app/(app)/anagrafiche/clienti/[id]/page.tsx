@@ -48,11 +48,14 @@ export default async function ClienteDetailPage({
             referente_telefono: cliente.referente_telefono ?? "",
             referente_email: cliente.referente_email ?? "",
             referente_data_nascita: cliente.referente_data_nascita ?? "",
-            indirizzo: cliente.indirizzo ?? "",
+            indirizzo_via: cliente.indirizzo_via ?? "",
+            indirizzo_cap: cliente.indirizzo_cap ?? "",
+            indirizzo_citta: cliente.indirizzo_citta ?? "",
+            indirizzo_provincia: cliente.indirizzo_provincia ?? "",
             partner_id: cliente.partner_id ?? "",
             note: cliente.note ?? "",
           }}
-          onSubmit={(formData) => updateCliente(id, formData)}
+          onSubmit={updateCliente.bind(null, id)}
         />
       </div>
 
@@ -74,6 +77,7 @@ export default async function ClienteDetailPage({
           <h2 className="text-lg font-semibold">Impianti collegati</h2>
           <Button
             size="sm"
+            nativeButton={false}
             render={
               <Link href={`/anagrafiche/impianti/nuovo?cliente_id=${id}`}>
                 Nuovo impianto

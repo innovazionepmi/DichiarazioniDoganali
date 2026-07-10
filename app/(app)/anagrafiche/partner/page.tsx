@@ -18,7 +18,10 @@ export default async function PartnerListPage() {
     <div className="grid gap-4">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold">Partner</h1>
-        <Button render={<Link href="/anagrafiche/partner/nuovo">Nuovo partner</Link>} />
+        <Button
+          nativeButton={false}
+          render={<Link href="/anagrafiche/partner/nuovo">Nuovo partner</Link>}
+        />
       </div>
       <PartnerTable data={partner ?? []} />
     </div>

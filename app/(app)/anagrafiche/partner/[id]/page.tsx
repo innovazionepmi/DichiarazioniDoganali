@@ -26,7 +26,7 @@ export default async function PartnerDetailPage({
           ragione_sociale: partner.ragione_sociale,
           note: partner.note ?? "",
         }}
-        onSubmit={(formData) => updatePartner(id, formData)}
+        onSubmit={updatePartner.bind(null, id)}
       />
     </div>
   )
