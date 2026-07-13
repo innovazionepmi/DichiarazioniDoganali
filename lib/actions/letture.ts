@@ -122,18 +122,30 @@ export async function analizzaPdfLetture(
   }
 
   const supabase = await createClient()
-  const { data: contatore } = await supabase
+  // Niente .maybeSingle(): con più righe corrispondenti fallirebbe in modo
+  // silenzioso (data: null, error mascherato) e il codice lo avrebbe letto
+  // come "nessun contatore trovato" — messaggio fuorviante se in realtà il
+  // problema è un doppione in anagrafica. Gestiamo 0/1/molti esplicitamente.
+  const { data: contatoriTrovati, error: contatoreError } = await supabase
     .from("contatori")
     .select("id, matricola")
     .eq("impianto_id", impiantoId)
     .eq("pod", parsed.pod)
-    .maybeSingle()
+    .eq("attivo", true)
 
-  if (!contatore) {
+  if (contatoreError) return { error: contatoreError.message }
+
+  if (!contatoriTrovati || contatoriTrovati.length === 0) {
     return {
-      error: `Nessun contatore con POD ${parsed.pod} trovato su questo impianto. Crealo prima di importare (o verifica che il POD sia corretto).`,
+      error: `Nessun contatore attivo con POD ${parsed.pod} trovato su questo impianto. Crealo prima di importare (o verifica che il POD sia corretto).`,
     }
   }
+  if (contatoriTrovati.length > 1) {
+    return {
+      error: `Trovati ${contatoriTrovati.length} contatori attivi con POD ${parsed.pod} su questo impianto: il POD dovrebbe identificare un solo contatore attivo. Archivia i doppioni dalla scheda impianto prima di importare.`,
+    }
+  }
+  const contatore = contatoriTrovati[0]
 
   const avvisi = [...parsed.avvisi]
   const sostituzioneSospetta =
