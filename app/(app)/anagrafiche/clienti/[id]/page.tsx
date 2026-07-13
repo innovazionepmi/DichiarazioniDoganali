@@ -3,7 +3,9 @@ import { notFound } from "next/navigation"
 import { createClient } from "@/lib/supabase/server"
 import { ClienteForm } from "@/components/clienti/cliente-form"
 import { ClienteCredenzialiForm } from "@/components/clienti/cliente-credenziali-form"
+import { F24Section } from "@/components/clienti/f24-section"
 import { updateCliente } from "@/lib/actions/clienti"
+import { isEmailConfigured } from "@/lib/email/client"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
@@ -16,20 +18,37 @@ export default async function ClienteDetailPage({
   const { id } = await params
   const supabase = await createClient()
 
-  const [{ data: cliente }, { data: partnerOptions }, { data: impianti }] =
-    await Promise.all([
-      supabase.from("clienti").select("*").eq("id", id).single(),
-      supabase
-        .from("partner")
-        .select("id, ragione_sociale")
-        .eq("attivo", true)
-        .order("ragione_sociale"),
-      supabase
-        .from("impianti")
-        .select("id, nome_impianto, tipo_soggetto, attivo")
-        .eq("cliente_id", id)
-        .order("nome_impianto"),
-    ])
+  const [
+    { data: cliente },
+    { data: partnerOptions },
+    { data: impianti },
+    { data: impiantiConDiritto },
+    { data: generazioniF24 },
+  ] = await Promise.all([
+    supabase.from("clienti").select("*").eq("id", id).single(),
+    supabase
+      .from("partner")
+      .select("id, ragione_sociale")
+      .eq("attivo", true)
+      .order("ragione_sociale"),
+    supabase
+      .from("impianti")
+      .select("id, nome_impianto, tipo_soggetto, attivo")
+      .eq("cliente_id", id)
+      .order("nome_impianto"),
+    supabase
+      .from("impianti")
+      .select("id, nome_impianto, codice_impianto_f24, diritto_licenza_importo")
+      .eq("cliente_id", id)
+      .eq("diritto_licenza_dovuto", true)
+      .eq("attivo", true)
+      .order("nome_impianto"),
+    supabase
+      .from("f24_generazioni")
+      .select("id, anno_riferimento, data_scadenza, stato, data_invio")
+      .eq("cliente_id", id)
+      .order("anno_riferimento", { ascending: false }),
+  ])
 
   if (!cliente) notFound()
 
@@ -117,6 +136,15 @@ export default async function ClienteDetailPage({
           </p>
         )}
       </div>
+
+      <Separator />
+
+      <F24Section
+        clienteId={id}
+        impiantiConDiritto={impiantiConDiritto ?? []}
+        generazioni={generazioniF24 ?? []}
+        emailConfigurata={isEmailConfigured()}
+      />
     </div>
   )
 }
