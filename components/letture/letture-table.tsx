@@ -67,6 +67,19 @@ function numero(value: string): number {
   return Number.isFinite(n) ? n : 0
 }
 
+function costruisciGriglia(lettureEsistenti: LetturaEsistente[], anno: number): Griglia {
+  const griglia: Griglia = {}
+  for (const l of lettureEsistenti) {
+    if (l.periodo_anno !== anno) continue
+    griglia[chiave(l.contatore_id, l.periodo_mese)] = {
+      f1: l.valore_f1?.toString() ?? "",
+      f2: l.valore_f2?.toString() ?? "",
+      f3: l.valore_f3?.toString() ?? "",
+    }
+  }
+  return griglia
+}
+
 export function LettureTable({
   impiantoId,
   anno,
@@ -83,18 +96,9 @@ export function LettureTable({
   const router = useRouter()
   const [pending, startTransition] = useTransition()
 
-  const [griglia, setGriglia] = useState<Griglia>(() => {
-    const iniziale: Griglia = {}
-    for (const l of lettureEsistenti) {
-      if (l.periodo_anno !== anno) continue
-      iniziale[chiave(l.contatore_id, l.periodo_mese)] = {
-        f1: l.valore_f1?.toString() ?? "",
-        f2: l.valore_f2?.toString() ?? "",
-        f3: l.valore_f3?.toString() ?? "",
-      }
-    }
-    return iniziale
-  })
+  const [griglia, setGriglia] = useState<Griglia>(() =>
+    costruisciGriglia(lettureEsistenti, anno)
+  )
 
   function setCella(contatoreId: string, mese: number, campo: keyof Cella, value: string) {
     setGriglia((prev) => ({

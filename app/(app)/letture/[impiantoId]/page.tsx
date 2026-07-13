@@ -68,6 +68,12 @@ export default async function LettureImpiantoPage({
 
       {contatori && contatori.length > 0 ? (
         <LettureTable
+          // Forza il remount (e quindi il reset dello stato locale editabile)
+          // quando i dati salvati cambiano da fuori — es. dopo un import PDF
+          // (brief §5.4): senza questo, lo stato locale della griglia resta
+          // quello del primo caricamento e i valori importati non
+          // comparirebbero finché non si ricarica manualmente la pagina.
+          key={JSON.stringify(lettureEsistenti)}
           impiantoId={impianto.id}
           anno={anno}
           potenzaKw={impianto.potenza_kw}

@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useTransition } from "react"
+import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -57,6 +58,7 @@ type AnalisiOk = Extract<AnalisiPdfResult, { righe: RigaDiffPdf[] }>
 // corrette a mano (modificataManualmente) partono deselezionate ed
 // evidenziate, per non farle sovrascrivere per sbaglio.
 export function ImportaPdfDialog({ impiantoId }: { impiantoId: string }) {
+  const router = useRouter()
   const [open, setOpen] = useState(false)
   const [pending, startTransition] = useTransition()
   const [analisi, setAnalisi] = useState<AnalisiOk | null>(null)
@@ -124,6 +126,7 @@ export function ImportaPdfDialog({ impiantoId }: { impiantoId: string }) {
       }
       toast.success(`${righeSelezionate.length} lettura/e importata/e`)
       handleOpenChange(false)
+      router.refresh()
     })
   }
 
