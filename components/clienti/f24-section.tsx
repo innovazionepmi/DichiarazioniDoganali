@@ -120,7 +120,7 @@ export function F24Section({
                     {new Date(g.data_scadenza).toLocaleDateString("it-IT")}
                   </TableCell>
                   <TableCell>
-                    <Badge variant={g.stato === "inviato" ? "default" : "outline"}>
+                    <Badge variant={g.stato === "inviato" ? "success" : "outline"}>
                       {g.stato === "inviato" ? "Inviato" : "Generato"}
                     </Badge>
                   </TableCell>

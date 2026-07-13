@@ -1,8 +1,9 @@
 import { redirect } from "next/navigation"
-import Link from "next/link"
+import Image from "next/image"
 import { createClient } from "@/lib/supabase/server"
 import { logout } from "@/lib/actions/auth"
 import { Button } from "@/components/ui/button"
+import { NavLink } from "@/components/shared/nav-link"
 
 const NAV_ITEMS = [
   { href: "/anagrafiche/clienti", label: "Clienti" },
@@ -29,19 +30,20 @@ export default async function AppLayout({
 
   return (
     <div className="flex min-h-svh">
-      <aside className="w-56 shrink-0 border-r bg-muted/30 p-4">
-        <div className="mb-6 text-sm font-semibold">
-          Adempimenti Fotovoltaico
-        </div>
-        <nav className="grid gap-1 text-sm">
+      <aside className="flex w-56 shrink-0 flex-col gap-6 bg-sidebar p-4 text-sidebar-foreground">
+        <Image
+          src="/jouletec-logo.png"
+          alt="Jouletec"
+          width={2200}
+          height={800}
+          priority
+          className="h-6 w-auto self-start brightness-0 invert"
+        />
+        <nav className="grid gap-1">
           {NAV_ITEMS.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className="rounded px-2 py-1.5 hover:bg-muted"
-            >
+            <NavLink key={item.href} href={item.href}>
               {item.label}
-            </Link>
+            </NavLink>
           ))}
         </nav>
       </aside>

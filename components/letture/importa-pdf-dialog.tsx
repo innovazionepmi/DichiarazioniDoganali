@@ -274,7 +274,11 @@ export function ImportaPdfDialog({
                         <TableCell>
                           <Badge
                             variant={
-                              riga.stato === "nuovo" ? "default" : "outline"
+                              riga.stato === "nuovo"
+                                ? "info"
+                                : riga.stato === "differente"
+                                  ? "warning"
+                                  : "outline"
                             }
                           >
                             {STATO_LABEL[riga.stato]}
