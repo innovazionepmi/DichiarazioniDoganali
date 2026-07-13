@@ -1,8 +1,8 @@
 # Project status — Dichiarazione energia dogane
 
-Ultimo aggiornamento: sessione Fase 2 (parte 2, import PDF). Scritto per
-riprendere il lavoro in una sessione futura senza dover rileggere tutta la
-conversazione.
+Ultimo aggiornamento: sessione Fase 3 (F24 diritto di licenza), completata e
+committata su `staging`. Scritto per riprendere il lavoro in una sessione
+futura senza dover rileggere tutta la conversazione.
 
 ## Cos'è questo progetto
 
@@ -60,13 +60,74 @@ Dopo aver ricevuto ed esaminato i materiali reali del cliente:
 - **Archiviazione**: il PDF caricato finisce sempre su Storage + riga `documenti` (tipo `pdf_letture`), a prescindere da cosa Paolo conferma di importare.
 - **Non ancora testato end-to-end in browser**: l'upload di file da input nativo non è guidabile in modo affidabile dagli strumenti di automazione browser disponibili in sessione (vedi "Bug importanti" più sotto) — il parser è verificato via script, ma il flusso completo (upload reale → anteprima → conferma → dati a DB) va provato in staging dall'utente con uno dei PDF reali.
 
-**Deliberatamente rimandato al prossimo incremento** (non ancora costruito):
-- Import screenshot (serve Claude vision/OCR, lo screenshot non ha testo — a differenza del PDF)
-- Import CSV (esplicitamente rimandato dal brief)
-- Onboarding cliente da licenza PDF, generazione F24/registro PDF, XML Dogane, tracking — Fase 3/4/5 del brief, non ancora iniziate
-- **Punto aperto**: il PDF E-distribuzione riporta sia "immessa" che "prelevata" per lo stesso contatore/POD; l'ipotesi è che "prelevata" sia fuori scope (rilevante solo per GSE/fatturazione, non per la dichiarazione doganale) — importata solo "immessa", da confermare
-- **Punto aperto**: non ho un PDF reale di esempio per un contatore di tipo **produzione** (i 2 file ricevuti erano entrambi per lo stesso POD di tipo immissione) — il parser gestisce anche quel caso in modo ragionevole ma va validato al primo import reale
-- **Punto aperto**: regola "autoconsumo >70% → nessuna accisa dovuta" vista nell'Excel storico del cliente, non nel brief — rimandata su richiesta esplicita dell'utente, da chiarire prima di Fase 4 (dichiarazione)
+**Bug UX corretti dopo il primo test utente**: import PDF senza refresh
+automatico della tabella (mancava `router.refresh()`), e anno di riferimento
+poco chiaro nella sezione Letture (ora c'è un header esplicito "Anno {anno}"
+e un `key` sul componente tabella che forza il remount quando cambiano anno
+o dati, invece di un `useEffect`+`setState` — pattern flaggato come
+anti-pattern dal React Compiler del progetto).
+
+**Punto aperto**: il PDF E-distribuzione riporta sia "immessa" che
+"prelevata" per lo stesso contatore/POD; l'ipotesi è che "prelevata" sia
+fuori scope (rilevante solo per GSE/fatturazione, non per la dichiarazione
+doganale) — importata solo "immessa", da confermare.
+**Punto aperto**: non ho un PDF reale di esempio per un contatore di tipo
+**produzione** (i 2 file ricevuti erano entrambi per lo stesso POD di tipo
+immissione) — il parser gestisce anche quel caso in modo ragionevole ma va
+validato al primo import reale.
+**Punto aperto**: regola "autoconsumo >70% → nessuna accisa dovuta" vista
+nell'Excel storico del cliente, non nel brief — rimandata su richiesta
+esplicita dell'utente, da chiarire prima di Fase 4 (dichiarazione).
+
+## Cosa è stato costruito — Fase 3, F24 diritto di licenza (completa, da testare in staging)
+
+- **Generatore PDF F24** (`lib/pdf/f24-generator.ts` + `lib/pdf/f24-coordinates.ts`,
+  libreria `pdf-lib`): il modulo ufficiale "Mod. F24 Accise" (scaricato dal
+  sito dell'Agenzia delle Entrate, asset pubblico in
+  `lib/pdf/templates/f24-accise-vuoto.pdf` — **non** in `public/`, per lo
+  stesso motivo del punto 9 sotto) non ha campi AcroForm: il testo viene
+  sovrapposto a coordinate esatte (misurate da un facsimile reale via
+  `pdfjs-dist`, mai committate come dati ma solo come geometria di un modulo
+  pubblico). Una riga per impianto nella sezione Accise/Monopoli, TOTALE
+  O/SALDO O/SALDO FINALE calcolati automaticamente. **Punto aperto**: la
+  sezione Accise ha una capacità stimata di 6 righe (`numeroRigheMassimo` in
+  `f24-coordinates.ts`); se un cliente ha più impianti con diritto di
+  licenza, le righe in eccesso vengono **troncate silenziosamente** — va
+  validato con un cliente reale che superi quel numero, ed eventualmente
+  implementare la generazione multi-pagina.
+- **Verifica visiva**: generato un F24 di prova con dati sintetici,
+  convertito in immagine (script scratchpad, non nel repo) e controllato a
+  occhio — ogni campo cade nella casella giusta.
+- **Server actions** (`lib/actions/f24.ts`): `generaF24` valida i dati del
+  referente (con errore esplicito se mancano campi obbligatori in
+  anagrafica), genera il PDF, lo archivia su Storage + tabella `documenti`
+  (tipo `f24`), crea `f24_generazioni`/`f24_righe` e ritorna il PDF in
+  base64 per il download immediato. `inviaEmailF24` invia il PDF come
+  allegato all'email del referente e segna lo stato `inviato` — **mai
+  automatico**, sempre dietro un click esplicito "OK invio" in UI.
+  `scaricaF24` riscarica uno storico già generato.
+- **Email transazionali** (`lib/email/client.ts`, `nodemailer`): wrapper SMTP
+  generico (compatibile Brevo, che l'utente configurerà separatamente). Se
+  `SMTP_HOST`/`SMTP_USER`/`SMTP_PASSWORD` non sono impostate su Vercel,
+  l'invio fallisce con un errore chiaro in UI invece di un crash —
+  generazione e download restano utilizzabili anche prima che Brevo sia
+  attivo.
+- **UI** (`components/clienti/f24-section.tsx` + `f24-genera-dialog.tsx`):
+  nuova sezione "Diritto di licenza" nella scheda cliente, visibile solo se
+  il cliente ha almeno un impianto con `diritto_licenza_dovuto=true`.
+  Dialog di generazione con importi precompilati da
+  `diritto_licenza_importo` ma modificabili riga per riga. Storico
+  generazioni con bottoni "Scarica" e, se non ancora inviato, "OK invio".
+- **Non ancora testato end-to-end in staging**: generazione/download provati
+  solo con dati sintetici in locale — va provato dall'utente con un cliente
+  di test reale (dati anagrafici completi in scheda cliente, altrimenti
+  `generaF24` risponde con l'elenco dei campi mancanti). L'invio email resta
+  bloccato finché l'utente non configura Brevo su Vercel.
+
+**Deliberatamente non ancora costruito**: onboarding cliente da licenza PDF,
+generazione registro letture PDF, XML Dogane (esplicitamente gated: "per i
+dettagli specifici del XML ti istruisco in seguito"), tracking dashboard —
+Fase 3 restante/4/5 del brief.
 
 ## Bug importanti risolti in questa sessione (da ricordare)
 
@@ -78,13 +139,33 @@ Dopo aver ricevuto ed esaminato i materiali reali del cliente:
 6. `VERCEL_ENV` non va mai in `.env.example`/Project Settings: Vercel la rifiuta, è automatica.
 7. **Non committare mai dati reali del cliente finale nei file sorgente** (nomi ditta, matricole, cifre di produzione) — successo due volte in questa sessione: prima nei test del motore di calcolo (nome ditta nei commenti), poi evitato di proposito per il parser PDF (verificato solo via script scratchpad, mai committato). Bloccato dal classificatore la prima volta prima del commit. I numeri "nudi" nei test/fixture sintetiche vanno bene, i riferimenti a nomi/ditte/indirizzi reali no. **Prima di scrivere qualsiasi test o fixture basata su materiali reali del cliente, anonimizzare sempre prima di salvare su file.**
 8. **pdf-parse v2** ha un'API diversa dalla v1 (`new PDFParse({ data: buffer }).getText()`, non più `pdf(buffer)`), e i tipi sono inclusi nel pacchetto stesso — non installare `@types/pdf-parse` (è per la v1, conflittuale).
+9. **pdf-parse crashava su Vercel serverless** ("server error" generico, funzionava in locale): serve `serverExternalPackages: ["pdf-parse", "@napi-rs/canvas", "pdfjs-dist"]` in `next.config.ts` **più** `import "pdf-parse/worker"` prima di istanziare `PDFParse` nel codice server. Per lo stesso motivo, asset statici letti da codice server (es. il template F24) vanno messi in una cartella sorgente normale (`lib/pdf/templates/`), **mai in `public/`** — non è garantito che `public/` sia incluso nel bundle della funzione serverless.
+10. **`.maybeSingle()` di supabase-js nasconde l'errore "più righe trovate"**: se una query che ti aspetti restituisca 0 o 1 riga ne trova invece 2+, `.maybeSingle()` ritorna silenziosamente `data: null` senza propagare l'errore reale — se lo confondi con "nessun risultato" ottieni un messaggio fuorviante. Con dati che possono avere duplicati (es. POD duplicati in fase di test), meglio una query esplicita su array con `.length` per distinguere 0/1/molti.
 
 ## Prossimi passi immediati (da fare tu)
 
-1. **Testa l'import PDF end-to-end in staging**: vai su un impianto con contatori collegati (es. quello di test "Pannelloni1"), apri Letture → "Importa da PDF E-distribuzione", carica uno dei PDF reali del cliente. Verifica: l'anteprima mostra i valori giusti, il banner di sostituzione contatore non appare a torto, la conferma scrive le letture corrette, un secondo import dello stesso file non duplica righe (upsert) e non sovrascrive eventuali correzioni manuali fatte nel frattempo.
-2. Se il parser fallisce o estrae valori sbagliati su un PDF reale diverso dai 2 già verificati, dimmelo: molto probabilmente serve solo aggiustare le regex in `lib/parsers/edistribuzione-pdf.ts` (già successo una volta con la tabella "picco di potenza").
-3. Quando tutto funziona: dammi conferma esplicita e ti guido nel merge `staging` → `main` (primo deploy di produzione) — oppure procediamo con il prossimo incremento a tua scelta.
-4. (Opzionale) elimina l'utente di test `claude-test@example.com` da Supabase Auth Dashboard.
+1. **Testa la Fase 3 (F24) in staging**: vai su un cliente di test con
+   anagrafica completa (sezione "Dati per F24") e almeno un impianto con
+   "Diritto di licenza dovuto" attivo, apri la scheda cliente → sezione
+   "Diritto di licenza" → "Genera F24". Verifica che il PDF scaricato abbia
+   i dati nelle caselle giuste (stesso controllo visivo già fatto io con
+   dati sintetici, ma su un caso reale). L'invio email resta bloccato finché
+   non configuri Brevo (`SMTP_HOST`/`SMTP_USER`/`SMTP_PASSWORD`/`EMAIL_FROM`
+   su Vercel Project Settings) — fino ad allora vedrai un errore chiaro sul
+   bottone "OK invio", che è normale.
+2. Se un cliente ha più impianti con diritto di licenza di quanti ne entrano
+   nel modulo (stimato 6 righe), dimmelo: il codice al momento tronca le
+   righe in eccesso, va deciso se passare alla generazione multi-pagina.
+3. **Testa l'import PDF letture end-to-end in staging** (se non ancora
+   fatto): vai su un impianto con contatori collegati, apri Letture →
+   "Importa da PDF E-distribuzione", carica un PDF reale. Verifica anteprima,
+   conferma, upsert senza duplicati.
+4. Quando tutto funziona: dammi conferma esplicita e ti guido nel merge
+   `staging` → `main` (primo deploy di produzione) — oppure procediamo con
+   il prossimo incremento (dichiarazione doganale Quadri A/G/L, o
+   onboarding cliente da licenza PDF) a tua scelta.
+5. (Opzionale) elimina l'utente di test `claude-test@example.com` da
+   Supabase Auth Dashboard.
 
 ## File utili per orientarsi
 
@@ -95,4 +176,5 @@ Dopo aver ricevuto ed esaminato i materiali reali del cliente:
 - Motore di calcolo: `lib/calc/registro.ts` (+ `registro.test.ts`, `npm run test`)
 - Sezione Letture: `app/(app)/letture/`, `components/letture/`, `lib/actions/letture.ts`
 - Parser PDF: `lib/parsers/edistribuzione-pdf.ts` (+ `.test.ts`), upload: `lib/actions/documenti.ts`
+- F24: `lib/pdf/f24-generator.ts` (+ `.test.ts`, coordinate in `f24-coordinates.ts`), `lib/actions/f24.ts`, email: `lib/email/client.ts`, UI: `components/clienti/f24-section.tsx`
 - Setup locale: [`README.md`](./README.md)
