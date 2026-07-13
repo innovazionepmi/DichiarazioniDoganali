@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server"
 import { ClienteForm } from "@/components/clienti/cliente-form"
 import { ClienteCredenzialiForm } from "@/components/clienti/cliente-credenziali-form"
 import { F24Section } from "@/components/clienti/f24-section"
+import { DocumentiSection } from "@/components/shared/documenti-section"
 import { updateCliente } from "@/lib/actions/clienti"
 import { isEmailConfigured } from "@/lib/email/client"
 import { Button } from "@/components/ui/button"
@@ -24,6 +25,7 @@ export default async function ClienteDetailPage({
     { data: impianti },
     { data: impiantiConDiritto },
     { data: generazioniF24 },
+    { data: documenti },
   ] = await Promise.all([
     supabase.from("clienti").select("*").eq("id", id).single(),
     supabase
@@ -48,6 +50,14 @@ export default async function ClienteDetailPage({
       .select("id, anno_riferimento, data_scadenza, stato, data_invio")
       .eq("cliente_id", id)
       .order("anno_riferimento", { ascending: false }),
+    // 'f24' escluso: ha già una vista dedicata più ricca nella sezione
+    // "Diritto di licenza" più sotto (stato generato/inviato).
+    supabase
+      .from("documenti")
+      .select("id, tipo, nome_file, created_at")
+      .eq("cliente_id", id)
+      .neq("tipo", "f24")
+      .order("created_at", { ascending: false }),
   ])
 
   if (!cliente) notFound()
@@ -145,6 +155,10 @@ export default async function ClienteDetailPage({
         generazioni={generazioniF24 ?? []}
         emailConfigurata={isEmailConfigured()}
       />
+
+      <Separator />
+
+      <DocumentiSection documenti={documenti ?? []} />
     </div>
   )
 }

@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server"
 import { ImpiantoForm } from "@/components/impianti/impianto-form"
 import { ContatoriList } from "@/components/impianti/contatori-list"
 import { ContatoriRelazioniManager } from "@/components/impianti/contatori-relazioni-manager"
+import { DocumentiSection } from "@/components/shared/documenti-section"
 import { updateImpianto } from "@/lib/actions/impianti"
 import { Separator } from "@/components/ui/separator"
 
@@ -15,7 +16,7 @@ export default async function ImpiantoDetailPage({
   const { id } = await params
   const supabase = await createClient()
 
-  const [{ data: impianto }, { data: clienteOptions }, { data: contatori }] =
+  const [{ data: impianto }, { data: clienteOptions }, { data: contatori }, { data: documenti }] =
     await Promise.all([
       supabase
         .from("impianti")
@@ -32,6 +33,11 @@ export default async function ImpiantoDetailPage({
         .select("*")
         .eq("impianto_id", id)
         .order("data_attivazione", { ascending: false }),
+      supabase
+        .from("documenti")
+        .select("id, tipo, nome_file, created_at")
+        .eq("impianto_id", id)
+        .order("created_at", { ascending: false }),
     ])
 
   const contatoreIds = (contatori ?? []).map((c) => c.id)
@@ -98,6 +104,10 @@ export default async function ImpiantoDetailPage({
         contatori={contatori ?? []}
         relazioni={relazioni ?? []}
       />
+
+      <Separator />
+
+      <DocumentiSection documenti={documenti ?? []} />
     </div>
   )
 }

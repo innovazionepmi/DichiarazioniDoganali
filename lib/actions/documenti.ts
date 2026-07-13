@@ -62,3 +62,35 @@ export async function caricaDocumento(
 
   return { documentoId: data.id, storagePath: percorso }
 }
+
+export type ScaricaDocumentoResult =
+  | { error: string }
+  | { base64: string; nomeFile: string; mimeType: string }
+
+// Download generico per qualunque riga di `documenti` (licenze, PDF letture,
+// screenshot, ecc.) — stesso meccanismo già usato per l'F24
+// (lib/actions/f24.ts, scaricaF24), qui riutilizzabile per ogni tipo.
+export async function scaricaDocumento(documentoId: string): Promise<ScaricaDocumentoResult> {
+  const supabase = await createClient()
+  const { data: documento, error } = await supabase
+    .from("documenti")
+    .select("storage_path, nome_file, mime_type")
+    .eq("id", documentoId)
+    .single()
+
+  if (error || !documento) return { error: error?.message ?? "Documento non trovato" }
+
+  const { data: file, error: downloadError } = await supabase.storage
+    .from("documenti")
+    .download(documento.storage_path)
+  if (downloadError || !file) {
+    return { error: downloadError?.message ?? "Impossibile scaricare il file" }
+  }
+
+  const buffer = Buffer.from(await file.arrayBuffer())
+  return {
+    base64: buffer.toString("base64"),
+    nomeFile: documento.nome_file,
+    mimeType: documento.mime_type || "application/octet-stream",
+  }
+}
