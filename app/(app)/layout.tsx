@@ -8,6 +8,7 @@ const NAV_ITEMS = [
   { href: "/anagrafiche/clienti", label: "Clienti" },
   { href: "/anagrafiche/impianti", label: "Impianti" },
   { href: "/anagrafiche/partner", label: "Partner" },
+  { href: "/letture", label: "Letture" },
 ]
 
 export default async function AppLayout({

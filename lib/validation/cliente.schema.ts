@@ -9,6 +9,7 @@ export const clienteSchema = z.object({
   partita_iva: optionalText(32),
   codice_licenza: optionalText(64),
   referente_nome: optionalText(255),
+  referente_cognome: optionalText(255),
   referente_telefono: optionalText(64),
   referente_email: z
     .string()
@@ -18,6 +19,16 @@ export const clienteSchema = z.object({
     .optional()
     .or(z.literal("")),
   referente_data_nascita: optionalText(10),
+  // Dati necessari per compilare l'F24 (sezione DATI ANAGRAFICI): il
+  // rappresentante legale è una persona fisica, distinta dalla ditta.
+  referente_codice_fiscale: optionalText(16),
+  referente_sesso: z.enum(["M", "F"]).optional().or(z.literal("")),
+  referente_comune_nascita: optionalText(128),
+  referente_provincia_nascita: optionalText(4),
+  referente_domicilio_via: optionalText(255),
+  referente_domicilio_cap: optionalText(10),
+  referente_domicilio_citta: optionalText(128),
+  referente_domicilio_provincia: optionalText(4),
   indirizzo_via: optionalText(255),
   indirizzo_cap: optionalText(10),
   indirizzo_citta: optionalText(128),

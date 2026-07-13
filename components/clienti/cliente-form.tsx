@@ -23,6 +23,7 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form"
+import { Separator } from "@/components/ui/separator"
 
 const NESSUN_PARTNER = "__nessun_partner__"
 
@@ -44,9 +45,18 @@ export function ClienteForm({
       partita_iva: "",
       codice_licenza: "",
       referente_nome: "",
+      referente_cognome: "",
       referente_telefono: "",
       referente_email: "",
       referente_data_nascita: "",
+      referente_codice_fiscale: "",
+      referente_sesso: "",
+      referente_comune_nascita: "",
+      referente_provincia_nascita: "",
+      referente_domicilio_via: "",
+      referente_domicilio_cap: "",
+      referente_domicilio_citta: "",
+      referente_domicilio_provincia: "",
       indirizzo_via: "",
       indirizzo_cap: "",
       indirizzo_citta: "",
@@ -182,6 +192,19 @@ export function ClienteForm({
           />
           <FormField
             control={form.control}
+            name="referente_cognome"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Cognome referente</FormLabel>
+                <FormControl>
+                  <Input {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
             name="referente_data_nascita"
             render={({ field }) => (
               <FormItem>
@@ -219,6 +242,128 @@ export function ClienteForm({
               </FormItem>
             )}
           />
+        </div>
+
+        <Separator />
+
+        <div>
+          <h3 className="mb-3 text-sm font-semibold text-muted-foreground">
+            Dati per F24 (rappresentante legale)
+          </h3>
+          <div className="grid gap-4 sm:grid-cols-4">
+            <FormField
+              control={form.control}
+              name="referente_codice_fiscale"
+              render={({ field }) => (
+                <FormItem className="sm:col-span-2">
+                  <FormLabel>Codice fiscale referente</FormLabel>
+                  <FormControl>
+                    <Input {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="referente_sesso"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Sesso</FormLabel>
+                  <Select value={field.value} onValueChange={field.onChange}>
+                    <FormControl>
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="—" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="M">M</SelectItem>
+                      <SelectItem value="F">F</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="referente_provincia_nascita"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Prov. di nascita</FormLabel>
+                  <FormControl>
+                    <Input placeholder="es. TV" maxLength={4} {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="referente_comune_nascita"
+              render={({ field }) => (
+                <FormItem className="sm:col-span-4">
+                  <FormLabel>Comune di nascita</FormLabel>
+                  <FormControl>
+                    <Input {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="referente_domicilio_via"
+              render={({ field }) => (
+                <FormItem className="sm:col-span-2">
+                  <FormLabel>Domicilio fiscale — via (con civico)</FormLabel>
+                  <FormControl>
+                    <Input {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="referente_domicilio_cap"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>CAP</FormLabel>
+                  <FormControl>
+                    <Input {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="referente_domicilio_provincia"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Provincia</FormLabel>
+                  <FormControl>
+                    <Input placeholder="es. TV" maxLength={4} {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="referente_domicilio_citta"
+              render={({ field }) => (
+                <FormItem className="sm:col-span-3">
+                  <FormLabel>Città</FormLabel>
+                  <FormControl>
+                    <Input {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </div>
         </div>
 
         <div className="grid gap-4 sm:grid-cols-4">
