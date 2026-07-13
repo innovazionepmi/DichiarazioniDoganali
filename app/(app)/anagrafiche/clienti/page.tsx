@@ -2,6 +2,7 @@ import Link from "next/link"
 import { createClient } from "@/lib/supabase/server"
 import { Button } from "@/components/ui/button"
 import { ClienteTable } from "@/components/clienti/cliente-table"
+import { OnboardingLicenzaDialog } from "@/components/clienti/onboarding-licenza-dialog"
 import {
   PartnerFilter,
   PARTNER_FILTER_DIRETTI,
@@ -45,10 +46,13 @@ export default async function ClientiListPage({
     <div className="grid gap-4">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold">Clienti</h1>
-        <Button
-          nativeButton={false}
-          render={<Link href="/anagrafiche/clienti/nuovo">Nuovo cliente</Link>}
-        />
+        <div className="flex gap-2">
+          <OnboardingLicenzaDialog />
+          <Button
+            nativeButton={false}
+            render={<Link href="/anagrafiche/clienti/nuovo">Nuovo cliente</Link>}
+          />
+        </div>
       </div>
       <PartnerFilter partnerOptions={partnerOptions ?? []} />
       <ClienteTable
