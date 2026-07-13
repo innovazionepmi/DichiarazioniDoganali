@@ -31,14 +31,17 @@ export default async function AppLayout({
   return (
     <div className="flex min-h-svh">
       <aside className="flex w-56 shrink-0 flex-col gap-6 bg-sidebar p-4 text-sidebar-foreground">
-        <Image
-          src="/jouletec-logo.png"
-          alt="Jouletec"
-          width={2200}
-          height={800}
-          priority
-          className="h-6 w-auto self-start brightness-0 invert"
-        />
+        <div className="flex items-center gap-2 self-start">
+          <Image
+            src="/icon.png"
+            alt=""
+            width={256}
+            height={256}
+            priority
+            className="size-7 shrink-0 brightness-0 invert"
+          />
+          <span className="font-heading text-lg font-semibold">Jouletec</span>
+        </div>
         <nav className="grid gap-1">
           {NAV_ITEMS.map((item) => (
             <NavLink key={item.href} href={item.href}>

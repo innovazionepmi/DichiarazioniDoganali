@@ -96,8 +96,11 @@
 
   /* Accento brand (olive) e stati semantici — assenti nel set shadcn di
      default, aggiunti per esprimere i toni di Badge/stato del design
-     system Jouletec senza sovrapporsi al significato neutro di --accent. */
-  --brand-accent: #a6b94a;
+     system Jouletec senza sovrapporsi al significato neutro di --accent.
+     --brand-accent usa olive-700 (non olive-500) perché è il pulsante
+     primario dell'app con testo bianco: olive-500/600 non hanno contrasto
+     sufficiente per il testo bianco (~2.9:1), olive-700 arriva a ~4:1. */
+  --brand-accent: #7c8a34;
   --brand-accent-hover: #94a43c;
   --brand-accent-foreground: #1b242d;
   --status-success: #2e7d4f;
