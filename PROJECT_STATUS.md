@@ -1,7 +1,7 @@
 # Project status — Dichiarazione energia dogane
 
-Ultimo aggiornamento: sessione Fase 3 (F24 diritto di licenza), completata e
-committata su `staging`. Scritto per riprendere il lavoro in una sessione
+Ultimo aggiornamento: onboarding cliente/impianto da licenza PDF, completato
+e committato su `staging`. Scritto per riprendere il lavoro in una sessione
 futura senza dover rileggere tutta la conversazione.
 
 ## Cos'è questo progetto
@@ -124,10 +124,48 @@ esplicita dell'utente, da chiarire prima di Fase 4 (dichiarazione).
   `generaF24` risponde con l'elenco dei campi mancanti). L'invio email resta
   bloccato finché l'utente non configura Brevo su Vercel.
 
-**Deliberatamente non ancora costruito**: onboarding cliente da licenza PDF,
-generazione registro letture PDF, XML Dogane (esplicitamente gated: "per i
-dettagli specifici del XML ti istruisco in seguito"), tracking dashboard —
-Fase 3 restante/4/5 del brief.
+**Deliberatamente non ancora costruito**: generazione registro letture PDF,
+XML Dogane (esplicitamente gated: "per i dettagli specifici del XML ti
+istruisco in seguito"), tracking dashboard — Fase 4/5 del brief.
+
+## Cosa è stato costruito — Onboarding cliente/impianto da licenza PDF (completo, da testare in staging)
+
+- **Motivazione**: con ~86 impianti previsti, l'inserimento manuale di ogni
+  cliente/impianto è il collo di bottiglia maggiore. Il PDF di licenza
+  fiscale (Agenzia Dogane e Monopoli) contiene quasi tutti i dati anagrafici
+  necessari — ma è quasi sempre una **scansione**: `pdf-parse` estrae ~0
+  caratteri di testo (verificato su un documento reale), quindi qui non è
+  possibile il parsing regex già usato per i PDF E-distribuzione. Serve
+  visione/OCR.
+- **Estrazione vision** (`lib/ai/estrai-licenza.ts`): le pagine del PDF
+  vengono rasterizzate in immagini (`lib/pdf/rasterizza-pagine.ts`, stesso
+  meccanismo `pdf-parse`/`getScreenshot` già usato per la verifica visiva
+  dell'F24) e inviate all'API Messages di Anthropic (`fetch` diretto, nessuna
+  dipendenza SDK) con un prompt che richiede JSON stretto. **Verificato una
+  volta con autorizzazione esplicita dell'utente** su un documento reale
+  (script scratchpad, mai committato, cancellato subito dopo): estrazione
+  quasi perfetta di ragione sociale, CF/PIVA, codice ditta/licenza,
+  nome+cognome+CF del legale rappresentante, indirizzi strutturati (ditta e
+  impianto), protocollo, data, ufficio doganale. **Importante**: alcuni dati
+  (es. l'importo del diritto di licenza) possono stare sulla lettera di
+  accompagnamento invece che sul certificato — per questo vengono inviate
+  **tutte** le pagine del PDF insieme (max 6, oltre si tronca con avviso).
+- **Flusso** (`lib/actions/onboarding.ts` + `components/clienti/
+  onboarding-licenza-dialog.tsx`, bottone "Importa da licenza PDF" in
+  `/anagrafiche/clienti`): upload → analisi (nessuna scrittura DB, solo
+  estrazione) → revisione con **tutti i campi precompilati ed editabili**
+  (mai automatico) → conferma, che crea cliente (o riusa uno esistente se il
+  CF estratto corrisponde già a un cliente attivo — sempre sovrascrivibile)
+  + impianto + archivia il PDF in `documenti` (tipo `licenza`), tutto in un
+  solo passaggio atomico (stesso pattern di `generaF24`, non due fasi).
+  Campi non estraibili dal documento (nome impianto, potenza kW, registro
+  letture) restano da compilare a mano, prima o dopo la conferma.
+- **Non ancora testato end-to-end in staging**: l'estrazione vision non è
+  mai stata chiamata dall'app vera (solo dallo script di verifica una
+  tantum) — va provata dall'utente con un documento reale. Richiede
+  `ANTHROPIC_API_KEY` configurata su Vercel (l'utente ne ha già una in
+  `.env.local`, va replicata su Vercel Project Settings). Il modello di
+  default è `claude-sonnet-5` (sovrascrivibile con `ANTHROPIC_MODEL`).
 
 ## Bug importanti risolti in questa sessione (da ricordare)
 
@@ -141,30 +179,38 @@ Fase 3 restante/4/5 del brief.
 8. **pdf-parse v2** ha un'API diversa dalla v1 (`new PDFParse({ data: buffer }).getText()`, non più `pdf(buffer)`), e i tipi sono inclusi nel pacchetto stesso — non installare `@types/pdf-parse` (è per la v1, conflittuale).
 9. **pdf-parse crashava su Vercel serverless** ("server error" generico, funzionava in locale): serve `serverExternalPackages: ["pdf-parse", "@napi-rs/canvas", "pdfjs-dist"]` in `next.config.ts` **più** `import "pdf-parse/worker"` prima di istanziare `PDFParse` nel codice server. Per lo stesso motivo, asset statici letti da codice server (es. il template F24) vanno messi in una cartella sorgente normale (`lib/pdf/templates/`), **mai in `public/`** — non è garantito che `public/` sia incluso nel bundle della funzione serverless.
 10. **`.maybeSingle()` di supabase-js nasconde l'errore "più righe trovate"**: se una query che ti aspetti restituisca 0 o 1 riga ne trova invece 2+, `.maybeSingle()` ritorna silenziosamente `data: null` senza propagare l'errore reale — se lo confondi con "nessun risultato" ottieni un messaggio fuorviante. Con dati che possono avere duplicati (es. POD duplicati in fase di test), meglio una query esplicita su array con `.length` per distinguere 0/1/molti.
+11. **Inviare dati reali del cliente a un servizio esterno (API Anthropic) è diverso da committarli nel repo**: bloccato dal classificatore come "Data Exfiltration" anche dopo autorizzazione esplicita dell'utente su un primo tentativo — la seconda chiamata con gli stessi dati è stata bloccata come hard-block non aggirabile. **Non ritentare mai in modi diversi un'azione così bloccata**: un singolo test autorizzato è bastato per validare l'approccio, il resto della verifica end-to-end spetta all'utente in staging. Anche negli **esempi nei prompt** (es. formato di un codice) va usato un valore fittizio, mai il valore reale visto in un documento del cliente — successo una volta con il codice ditta reale usato come esempio di formato, corretto prima del commit.
 
 ## Prossimi passi immediati (da fare tu)
 
-1. **Testa la Fase 3 (F24) in staging**: vai su un cliente di test con
+1. **Configura `ANTHROPIC_API_KEY` su Vercel Project Settings** (già presente
+   in `.env.local` ma non ancora replicata in produzione) — senza questa, il
+   bottone "Importa da licenza PDF" mostra un errore chiaro invece di un
+   crash, ma non è utilizzabile.
+2. **Testa l'onboarding da licenza PDF in staging**: dalla lista clienti,
+   "Importa da licenza PDF", carica un documento reale. Verifica che i campi
+   estratti siano corretti (o correggili a mano — è previsto), scegli
+   nuovo/esistente cliente, conferma, controlla che cliente/impianto/PDF
+   siano stati creati correttamente.
+3. **Testa la Fase 3 (F24) in staging**: vai su un cliente di test con
    anagrafica completa (sezione "Dati per F24") e almeno un impianto con
    "Diritto di licenza dovuto" attivo, apri la scheda cliente → sezione
    "Diritto di licenza" → "Genera F24". Verifica che il PDF scaricato abbia
-   i dati nelle caselle giuste (stesso controllo visivo già fatto io con
-   dati sintetici, ma su un caso reale). L'invio email resta bloccato finché
-   non configuri Brevo (`SMTP_HOST`/`SMTP_USER`/`SMTP_PASSWORD`/`EMAIL_FROM`
-   su Vercel Project Settings) — fino ad allora vedrai un errore chiaro sul
+   i dati nelle caselle giuste. L'invio email resta bloccato finché non
+   configuri Brevo (`SMTP_HOST`/`SMTP_USER`/`SMTP_PASSWORD`/`EMAIL_FROM` su
+   Vercel Project Settings) — fino ad allora vedrai un errore chiaro sul
    bottone "OK invio", che è normale.
-2. Se un cliente ha più impianti con diritto di licenza di quanti ne entrano
+4. Se un cliente ha più impianti con diritto di licenza di quanti ne entrano
    nel modulo (stimato 6 righe), dimmelo: il codice al momento tronca le
    righe in eccesso, va deciso se passare alla generazione multi-pagina.
-3. **Testa l'import PDF letture end-to-end in staging** (se non ancora
+5. **Testa l'import PDF letture end-to-end in staging** (se non ancora
    fatto): vai su un impianto con contatori collegati, apri Letture →
    "Importa da PDF E-distribuzione", carica un PDF reale. Verifica anteprima,
    conferma, upsert senza duplicati.
-4. Quando tutto funziona: dammi conferma esplicita e ti guido nel merge
+6. Quando tutto funziona: dammi conferma esplicita e ti guido nel merge
    `staging` → `main` (primo deploy di produzione) — oppure procediamo con
-   il prossimo incremento (dichiarazione doganale Quadri A/G/L, o
-   onboarding cliente da licenza PDF) a tua scelta.
-5. (Opzionale) elimina l'utente di test `claude-test@example.com` da
+   il prossimo incremento (dichiarazione doganale Quadri A/G/L) a tua scelta.
+7. (Opzionale) elimina l'utente di test `claude-test@example.com` da
    Supabase Auth Dashboard.
 
 ## File utili per orientarsi
@@ -177,4 +223,5 @@ Fase 3 restante/4/5 del brief.
 - Sezione Letture: `app/(app)/letture/`, `components/letture/`, `lib/actions/letture.ts`
 - Parser PDF: `lib/parsers/edistribuzione-pdf.ts` (+ `.test.ts`), upload: `lib/actions/documenti.ts`
 - F24: `lib/pdf/f24-generator.ts` (+ `.test.ts`, coordinate in `f24-coordinates.ts`), `lib/actions/f24.ts`, email: `lib/email/client.ts`, UI: `components/clienti/f24-section.tsx`
+- Onboarding licenza: `lib/pdf/rasterizza-pagine.ts` (+ `.test.ts`), `lib/ai/estrai-licenza.ts`, `lib/actions/onboarding.ts`, `lib/validation/licenza.schema.ts`, UI: `components/clienti/onboarding-licenza-dialog.tsx`
 - Setup locale: [`README.md`](./README.md)
