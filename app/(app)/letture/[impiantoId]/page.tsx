@@ -3,6 +3,7 @@ import { notFound } from "next/navigation"
 import { createClient } from "@/lib/supabase/server"
 import { LettureTable } from "@/components/letture/letture-table"
 import { AnnoSelector } from "@/components/letture/anno-selector"
+import { ImportaPdfDialog } from "@/components/letture/importa-pdf-dialog"
 
 export default async function LettureImpiantoPage({
   params,
@@ -58,7 +59,10 @@ export default async function LettureImpiantoPage({
         )}
         <div className="mt-1 flex items-center justify-between">
           <h1 className="text-xl font-semibold">Letture — {impianto.nome_impianto}</h1>
-          <AnnoSelector anno={anno} />
+          <div className="flex items-center gap-2">
+            <ImportaPdfDialog impiantoId={impianto.id} />
+            <AnnoSelector anno={anno} />
+          </div>
         </div>
       </div>
 
