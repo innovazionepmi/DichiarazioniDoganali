@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useTransition } from "react"
-import { useRouter } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -57,8 +57,15 @@ type AnalisiOk = Extract<AnalisiPdfResult, { righe: RigaDiffPdf[] }>
 // tramite upsertLetture riusata con origine='pdf_stampa'. Le righe già
 // corrette a mano (modificataManualmente) partono deselezionate ed
 // evidenziate, per non farle sovrascrivere per sbaglio.
-export function ImportaPdfDialog({ impiantoId }: { impiantoId: string }) {
+export function ImportaPdfDialog({
+  impiantoId,
+  annoSelezionato,
+}: {
+  impiantoId: string
+  annoSelezionato: number
+}) {
   const router = useRouter()
+  const pathname = usePathname()
   const [open, setOpen] = useState(false)
   const [pending, startTransition] = useTransition()
   const [analisi, setAnalisi] = useState<AnalisiOk | null>(null)
@@ -124,9 +131,20 @@ export function ImportaPdfDialog({ impiantoId }: { impiantoId: string }) {
         toast.error(result.error)
         return
       }
+
+      // Il PDF può contenere dati per un anno diverso da quello visualizzato
+      // in tabella in questo momento (l'anno scritto è quello indicato nel
+      // PDF stesso, non quello del menu a tendina): se è così, portiamo
+      // l'utente direttamente su quell'anno, altrimenti l'import "sparisce"
+      // agli occhi di chi sta guardando un anno diverso.
+      const annoImportato = righeSelezionate[0]?.periodo_anno
       toast.success(`${righeSelezionate.length} lettura/e importata/e`)
       handleOpenChange(false)
-      router.refresh()
+      if (annoImportato && annoImportato !== annoSelezionato) {
+        router.push(`${pathname}?anno=${annoImportato}`)
+      } else {
+        router.refresh()
+      }
     })
   }
 
@@ -169,6 +187,30 @@ export function ImportaPdfDialog({ impiantoId }: { impiantoId: string }) {
               <p className="text-sm text-muted-foreground">
                 POD {analisi.pod} — contatore {analisi.contatoreMatricola}
               </p>
+
+              {(() => {
+                const anniNelPdf = Array.from(
+                  new Set(analisi.righe.map((r) => r.periodoAnno))
+                ).sort()
+                const annoDiverso =
+                  anniNelPdf.length > 0 &&
+                  (anniNelPdf.length > 1 || anniNelPdf[0] !== annoSelezionato)
+                return (
+                  <div className="rounded-md border bg-muted/30 p-3 text-sm">
+                    Il PDF contiene dati per l&apos;anno{" "}
+                    {anniNelPdf.length > 1 ? "i" : ""}{" "}
+                    <strong>{anniNelPdf.join(", ")}</strong>.
+                    {annoDiverso && (
+                      <>
+                        {" "}
+                        Stai visualizzando l&apos;anno {annoSelezionato}: dopo la
+                        conferma verrai spostato automaticamente sull&apos;anno
+                        corretto per vedere i dati importati.
+                      </>
+                    )}
+                  </div>
+                )
+              })()}
 
               {analisi.sostituzioneSospetta && (
                 <div className="rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">

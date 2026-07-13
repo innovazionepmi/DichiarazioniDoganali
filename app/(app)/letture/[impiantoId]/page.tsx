@@ -58,22 +58,30 @@ export default async function LettureImpiantoPage({
           </Link>
         )}
         <div className="mt-1 flex items-center justify-between">
-          <h1 className="text-xl font-semibold">Letture — {impianto.nome_impianto}</h1>
+          <h1 className="text-xl font-semibold">
+            Letture — {impianto.nome_impianto} · Anno{" "}
+            <span className="text-primary">{anno}</span>
+          </h1>
           <div className="flex items-center gap-2">
-            <ImportaPdfDialog impiantoId={impianto.id} />
+            <ImportaPdfDialog impiantoId={impianto.id} annoSelezionato={anno} />
             <AnnoSelector anno={anno} />
           </div>
         </div>
+        <p className="mt-1 text-sm text-muted-foreground">
+          La tabella sotto mostra solo le letture dell&apos;anno {anno}. Cambia
+          anno dal menu a destra per vederne altri: i dati di anni diversi
+          restano salvati, non vengono persi.
+        </p>
       </div>
 
       {contatori && contatori.length > 0 ? (
         <LettureTable
           // Forza il remount (e quindi il reset dello stato locale editabile)
-          // quando i dati salvati cambiano da fuori — es. dopo un import PDF
-          // (brief §5.4): senza questo, lo stato locale della griglia resta
-          // quello del primo caricamento e i valori importati non
-          // comparirebbero finché non si ricarica manualmente la pagina.
-          key={JSON.stringify(lettureEsistenti)}
+          // quando cambia l'anno selezionato o quando i dati salvati cambiano
+          // da fuori — es. dopo un import PDF (brief §5.4): senza l'anno in
+          // chiave, passare da un anno senza dati a un altro anno senza dati
+          // non cambiava `lettureEsistenti` e la vista restava quella vecchia.
+          key={`${anno}-${JSON.stringify(lettureEsistenti)}`}
           impiantoId={impianto.id}
           anno={anno}
           potenzaKw={impianto.potenza_kw}
