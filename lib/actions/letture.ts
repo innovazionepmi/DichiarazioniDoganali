@@ -1,5 +1,9 @@
 "use server"
 
+// L'import del worker deve avvenire prima di usare PDFParse: necessario per
+// gli ambienti serverless (Vercel) — vedi anche serverExternalPackages in
+// next.config.ts.
+import "pdf-parse/worker"
 import { PDFParse } from "pdf-parse"
 import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
