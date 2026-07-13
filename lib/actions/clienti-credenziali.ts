@@ -45,3 +45,40 @@ export async function setCredenzialeCliente(
 
   revalidatePath(`/anagrafiche/clienti/${clienteId}`)
 }
+
+export type GetCredenzialeResult =
+  | { error: string }
+  | { username: string | null; password: string | null }
+
+// Recupero on-demand delle credenziali in chiaro (mai incluse nella query
+// della pagina cliente, solo richieste esplicitamente dall'operatore che
+// deve copiarle per accedere al portale E-distribuzione/GSE): stessa
+// separazione client-cookie/service-role di setCredenzialeCliente.
+export async function getCredenzialeCliente(
+  clienteId: string,
+  campo: "edistribuzione" | "gse"
+): Promise<GetCredenzialeResult> {
+  const userClient = await createClient()
+  const {
+    data: { user },
+  } = await userClient.auth.getUser()
+  if (!user) return { error: "Non autenticato" }
+
+  // Il progetto non genera tipi Database da Supabase, quindi il ritorno
+  // della RPC non è tipato automaticamente: annotato a mano in base allo
+  // schema di `get_cliente_credential` (vault_helpers.sql).
+  const admin = createServiceRoleClient()
+  const { data, error } = (await admin
+    .rpc("get_cliente_credential", { p_cliente_id: clienteId, p_campo: campo })
+    .maybeSingle()) as {
+    data: { username: string | null; password: string | null } | null
+    error: { message: string } | null
+  }
+
+  if (error) return { error: error.message }
+  if (!data || !data.password) {
+    return { error: "Nessuna credenziale salvata per questo portale." }
+  }
+
+  return { username: data.username, password: data.password }
+}
