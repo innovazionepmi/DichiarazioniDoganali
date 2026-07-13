@@ -1,8 +1,8 @@
 # Project status — Dichiarazione energia dogane
 
-Ultimo aggiornamento: onboarding cliente/impianto da licenza PDF, completato
-e committato su `staging`. Scritto per riprendere il lavoro in una sessione
-futura senza dover rileggere tutta la conversazione.
+Ultimo aggiornamento: applicato il design system "Jouletec" (brand del
+cliente) a tutta l'app, committato su `staging`. Scritto per riprendere il
+lavoro in una sessione futura senza dover rileggere tutta la conversazione.
 
 ## Cos'è questo progetto
 
@@ -167,6 +167,66 @@ istruisco in seguito"), tracking dashboard — Fase 4/5 del brief.
   `.env.local`, va replicata su Vercel Project Settings). Il modello di
   default è `claude-sonnet-5` (sovrascrivibile con `ANTHROPIC_MODEL`).
 
+## Cosa è stato costruito — Recupero credenziali portali (completo)
+
+La RPC `get_cliente_credential` esisteva già dalla Fase 1 ma non era mai
+stata collegata a nessuna azione/UI: si potevano solo **scrivere** le
+credenziali E-distribuzione/GSE, mai recuperarle per usarle davvero.
+Aggiunto `getCredenzialeCliente` (`lib/actions/clienti-credenziali.ts`) +
+bottone "Mostra credenziali salvate" nella scheda cliente
+(`components/clienti/cliente-credenziali-form.tsx`): decifra on-demand
+(mai caricate insieme al resto della pagina) e offre un'icona per copiare
+utente/password negli appunti.
+
+## Cosa è stato costruito — Documenti scaricabili (completo)
+
+Sezione "Documenti" generica (`components/shared/documenti-section.tsx`,
+azione `scaricaDocumento` in `lib/actions/documenti.ts`), aggiunta sia alla
+scheda cliente che alla scheda impianto: elenca tutti i file archiviati
+(licenze, PDF letture, screenshot, ecc.) con bottone "Scarica" — prima
+erano archiviati su Storage ma non recuperabili da nessuna UI. Nella scheda
+cliente i documenti di tipo `f24` sono esclusi dall'elenco perché hanno già
+una vista dedicata più ricca nella sezione "Diritto di licenza".
+
+## Cosa è stato costruito — Design system "Jouletec" (completo, da vedere in staging)
+
+L'utente ha fornito un progetto Claude Design ("Jouletec Design System",
+brand del cliente finale) con token colore/tipografia/spaziatura, 13
+componenti-specifica (stile inline, pensati come riferimento visivo — non
+per essere incollati come codice) e due mockup di riferimento. Applicato
+**ritematizzando i componenti shadcn/Base UI esistenti** tramite i token
+(non sostituendoli con i `.jsx` del design system, che avrebbe fatto perdere
+l'accessibilità/comportamento già funzionante su ~20 pagine).
+
+- **Colori** (`app/globals.css`): navy (`#2E3A46`) primario, olive
+  (`#A6B94A`/`#7C8A34`) come accento, nuovi token `--brand-accent`/
+  `--status-success`/`-warning`/`-info` (assenti nel set shadcn di default).
+  I pulsanti primari usano **olive-700** (non olive-500, l'accento "chiaro"
+  del logo) perché con testo bianco sopra serve più contrasto (~4:1 contro
+  ~2.9:1) — scelta esplicita dopo feedback dell'utente ("i pulsanti troppo
+  chiari").
+- **Font**: Space Grotesk (titoli)/Public Sans (corpo)/IBM Plex Mono
+  (codici) al posto di Geist, mai personalizzato prima.
+- **Sidebar**: sfondo navy scuro, icona quadrata del marchio (ritagliata a
+  mano dal logo originale via scan pixel dei bordi, `app/icon.png`) + testo
+  "Jouletec" — **non** l'immagine wordmark intera: usarla scalata piccola la
+  rendeva illeggibile/tagliata, il design system stesso nei suoi mockup usa
+  testo, non l'immagine, per la sidebar/topnav.
+- **Input** (`components/ui/input.tsx`): sfondo `bg-muted` invece di
+  trasparente — prima si confondevano col bianco della pagina.
+- **Badge**: nuove varianti `success`/`warning`/`info`, applicate a F24
+  stato "Inviato" e letture stato "Nuovo"/"Differente".
+- **Verifica dati reali → servizio esterno**: nota, non specifica a questa
+  fase — questo stesso punto è già coperto dal bug #11 sotto (test unico
+  autorizzato dall'utente su un documento reale del cliente, verso l'API
+  vision di Anthropic, per validare l'estrazione della Fase "Onboarding
+  licenza").
+- **Verifica senza screenshot**: il tool di cattura schermo del Browser pane
+  era bloccato per un problema infrastrutturale della sessione (non del
+  codice). Verificato comunque a fondo leggendo i valori CSS calcolati via
+  JavaScript nel browser (colori, font, dimensioni logo, contrasto
+  pulsanti) — se ricapita, questo è un fallback valido.
+
 ## Bug importanti risolti in questa sessione (da ricordare)
 
 1. **Closure non serializzabile Server→Client**: passare `onSubmit={(formData) => updateX(id, formData)}` da una pagina Server Component a un form Client Component causava un crash in produzione (build locale non lo intercetta, solo runtime). Fix: usare sempre `updateX.bind(null, id)`. **Se aggiungi nuove pagine di dettaglio, usa questo pattern fin da subito.**
@@ -180,6 +240,8 @@ istruisco in seguito"), tracking dashboard — Fase 4/5 del brief.
 9. **pdf-parse crashava su Vercel serverless** ("server error" generico, funzionava in locale): serve `serverExternalPackages: ["pdf-parse", "@napi-rs/canvas", "pdfjs-dist"]` in `next.config.ts` **più** `import "pdf-parse/worker"` prima di istanziare `PDFParse` nel codice server. Per lo stesso motivo, asset statici letti da codice server (es. il template F24) vanno messi in una cartella sorgente normale (`lib/pdf/templates/`), **mai in `public/`** — non è garantito che `public/` sia incluso nel bundle della funzione serverless.
 10. **`.maybeSingle()` di supabase-js nasconde l'errore "più righe trovate"**: se una query che ti aspetti restituisca 0 o 1 riga ne trova invece 2+, `.maybeSingle()` ritorna silenziosamente `data: null` senza propagare l'errore reale — se lo confondi con "nessun risultato" ottieni un messaggio fuorviante. Con dati che possono avere duplicati (es. POD duplicati in fase di test), meglio una query esplicita su array con `.length` per distinguere 0/1/molti.
 11. **Inviare dati reali del cliente a un servizio esterno (API Anthropic) è diverso da committarli nel repo**: bloccato dal classificatore come "Data Exfiltration" anche dopo autorizzazione esplicita dell'utente su un primo tentativo — la seconda chiamata con gli stessi dati è stata bloccata come hard-block non aggirabile. **Non ritentare mai in modi diversi un'azione così bloccata**: un singolo test autorizzato è bastato per validare l'approccio, il resto della verifica end-to-end spetta all'utente in staging. Anche negli **esempi nei prompt** (es. formato di un codice) va usato un valore fittizio, mai il valore reale visto in un documento del cliente — successo una volta con il codice ditta reale usato come esempio di formato, corretto prima del commit.
+12. **Cache Turbopack (`.next/`) può servire CSS/palette stantii**: dopo aver modificato `app/globals.css`, se i colori calcolati nel browser non corrispondono al file sorgente, cancellare `.next/` e riavviare il dev server prima di sospettare bug nel codice.
+13. **Immagini in flex container si stirano/appiattiscono senza `self-start`**: un `<Image>` con `w-auto` dentro un `flex flex-col` (default `align-items: stretch`) viene forzata a riempire la larghezza del container, distorcendo l'aspect ratio — serve `self-start` (o `items-start` sul contenitore).
 
 ## Prossimi passi immediati (da fare tu)
 
@@ -187,12 +249,16 @@ istruisco in seguito"), tracking dashboard — Fase 4/5 del brief.
    in `.env.local` ma non ancora replicata in produzione) — senza questa, il
    bottone "Importa da licenza PDF" mostra un errore chiaro invece di un
    crash, ma non è utilizzabile.
-2. **Testa l'onboarding da licenza PDF in staging**: dalla lista clienti,
+2. **Dai un'occhiata visiva al nuovo look Jouletec in staging** — non sono
+   riuscito a produrre uno screenshot in questa sessione (tool bloccato),
+   l'ho verificato solo via CSS calcolato. Controlla in particolare: logo
+   sidebar, colore/contrasto dei pulsanti, campi input, badge di stato.
+3. **Testa l'onboarding da licenza PDF in staging**: dalla lista clienti,
    "Importa da licenza PDF", carica un documento reale. Verifica che i campi
    estratti siano corretti (o correggili a mano — è previsto), scegli
    nuovo/esistente cliente, conferma, controlla che cliente/impianto/PDF
    siano stati creati correttamente.
-3. **Testa la Fase 3 (F24) in staging**: vai su un cliente di test con
+4. **Testa la Fase 3 (F24) in staging**: vai su un cliente di test con
    anagrafica completa (sezione "Dati per F24") e almeno un impianto con
    "Diritto di licenza dovuto" attivo, apri la scheda cliente → sezione
    "Diritto di licenza" → "Genera F24". Verifica che il PDF scaricato abbia
@@ -200,28 +266,29 @@ istruisco in seguito"), tracking dashboard — Fase 4/5 del brief.
    configuri Brevo (`SMTP_HOST`/`SMTP_USER`/`SMTP_PASSWORD`/`EMAIL_FROM` su
    Vercel Project Settings) — fino ad allora vedrai un errore chiaro sul
    bottone "OK invio", che è normale.
-4. Se un cliente ha più impianti con diritto di licenza di quanti ne entrano
+5. Se un cliente ha più impianti con diritto di licenza di quanti ne entrano
    nel modulo (stimato 6 righe), dimmelo: il codice al momento tronca le
    righe in eccesso, va deciso se passare alla generazione multi-pagina.
-5. **Testa l'import PDF letture end-to-end in staging** (se non ancora
+6. **Testa l'import PDF letture end-to-end in staging** (se non ancora
    fatto): vai su un impianto con contatori collegati, apri Letture →
    "Importa da PDF E-distribuzione", carica un PDF reale. Verifica anteprima,
    conferma, upsert senza duplicati.
-6. Quando tutto funziona: dammi conferma esplicita e ti guido nel merge
+7. Quando tutto funziona: dammi conferma esplicita e ti guido nel merge
    `staging` → `main` (primo deploy di produzione) — oppure procediamo con
    il prossimo incremento (dichiarazione doganale Quadri A/G/L) a tua scelta.
-7. (Opzionale) elimina l'utente di test `claude-test@example.com` da
+8. (Opzionale) elimina l'utente di test `claude-test@example.com` da
    Supabase Auth Dashboard.
 
 ## File utili per orientarsi
 
 - Schema: `supabase/migrations/` (leggere in ordine di timestamp)
 - Pattern CRUD di riferimento: `lib/actions/partner.ts`, `components/partner/partner-form.tsx`
-- Vault/credenziali: `lib/actions/clienti-credenziali.ts`, `lib/supabase/service-role.ts`
+- Vault/credenziali: `lib/actions/clienti-credenziali.ts` (scrittura + `getCredenzialeCliente` per il recupero), `lib/supabase/service-role.ts`
 - Auth: `lib/actions/auth.ts`, `proxy.ts`, `lib/supabase/middleware.ts`
 - Motore di calcolo: `lib/calc/registro.ts` (+ `registro.test.ts`, `npm run test`)
 - Sezione Letture: `app/(app)/letture/`, `components/letture/`, `lib/actions/letture.ts`
-- Parser PDF: `lib/parsers/edistribuzione-pdf.ts` (+ `.test.ts`), upload: `lib/actions/documenti.ts`
+- Parser PDF: `lib/parsers/edistribuzione-pdf.ts` (+ `.test.ts`), upload: `lib/actions/documenti.ts` (+ `scaricaDocumento`, `components/shared/documenti-section.tsx`)
 - F24: `lib/pdf/f24-generator.ts` (+ `.test.ts`, coordinate in `f24-coordinates.ts`), `lib/actions/f24.ts`, email: `lib/email/client.ts`, UI: `components/clienti/f24-section.tsx`
 - Onboarding licenza: `lib/pdf/rasterizza-pagine.ts` (+ `.test.ts`), `lib/ai/estrai-licenza.ts`, `lib/actions/onboarding.ts`, `lib/validation/licenza.schema.ts`, UI: `components/clienti/onboarding-licenza-dialog.tsx`
+- Design system Jouletec: token in `app/globals.css`, font in `app/layout.tsx`, sidebar in `app/(app)/layout.tsx`, progetto Claude Design originale (per rivedere componenti/guideline non ancora applicati): `projectId 3b848f67-8e2f-48b0-bdbc-8d52f62d1fbb` via `DesignSync`
 - Setup locale: [`README.md`](./README.md)
