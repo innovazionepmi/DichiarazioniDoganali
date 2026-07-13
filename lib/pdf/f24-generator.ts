@@ -58,6 +58,42 @@ function drawText(page: PDFPage, font: PDFFont, text: string, x: number, y: numb
   page.drawText(text.toUpperCase(), { x, y, size, font })
 }
 
+// Testo libero vincolato a una larghezza massima (es. codice identificativo
+// impianto, lunghezza variabile): riduce il font-size finché non ci sta
+// dentro, invece di farlo sforare oltre il bordo della casella.
+function drawTextFit(
+  page: PDFPage,
+  font: PDFFont,
+  text: string,
+  x: number,
+  y: number,
+  maxWidth: number,
+  size = 8,
+  minSize = 5
+) {
+  const upper = text.toUpperCase()
+  let fitSize = size
+  while (fitSize > minSize && font.widthOfTextAtSize(upper, fitSize) > maxWidth) {
+    fitSize -= 0.5
+  }
+  page.drawText(upper, { x, y, size: fitSize, font })
+}
+
+// Importi: il modulo ha una virgola pre-stampata come guida per i decimali.
+// Invece di allineare la stringa a sinistra (che sfasa la virgola a seconda
+// di quante cifre intere ha il valore), ancoriamo la virgola scritta esattamente
+// alla virgola del modulo — parte intera terminante a commaX, parte
+// decimale (",XX") a partire da commaX.
+function drawAmountAtComma(page: PDFPage, font: PDFFont, value: number, commaX: number, y: number, size = 8) {
+  const formatted = formatImporto(value)
+  const commaIndex = formatted.indexOf(",")
+  const intPart = formatted.slice(0, commaIndex)
+  const decPart = formatted.slice(commaIndex)
+  const intWidth = font.widthOfTextAtSize(intPart, size)
+  page.drawText(intPart, { x: commaX - intWidth, y, size, font })
+  page.drawText(decPart, { x: commaX, y, size, font })
+}
+
 // Genera il PDF F24 Accise precompilato sovrapponendo i valori al modulo
 // ufficiale vuoto (brief §5.2). Nessuna riga oltre F24_COORD.accise.
 // numeroRigheMassimo: se un cliente ha più impianti soggetti di quante
@@ -104,14 +140,21 @@ export async function generaF24Pdf(input: F24Input): Promise<Uint8Array> {
       drawText(page, helvetica, "D", F24_COORD.accise.ente, y)
       drawChars(page, courier, riga.provinciaImpianto, F24_COORD.accise.provincia, y)
       drawText(page, helvetica, "2813", F24_COORD.accise.codiceTributo, y)
-      drawText(page, helvetica, riga.codiceIdentificativo, F24_COORD.accise.codiceIdentificativo, y)
+      drawTextFit(
+        page,
+        helvetica,
+        riga.codiceIdentificativo,
+        F24_COORD.accise.codiceIdentificativo.x,
+        y,
+        F24_COORD.accise.codiceIdentificativo.maxWidth
+      )
       drawText(page, helvetica, String(input.annoRiferimento), F24_COORD.accise.anno, y)
-      drawText(page, helvetica, formatImporto(riga.importo), F24_COORD.accise.importo, y)
+      drawAmountAtComma(page, helvetica, riga.importo, F24_COORD.accise.importoCommaX, y)
     })
 
-    drawText(page, helvetica, formatImporto(totale), F24_COORD.totaleO.x, F24_COORD.totaleO.y)
-    drawText(page, helvetica, formatImporto(totale), F24_COORD.saldoO.x, F24_COORD.saldoO.y)
-    drawText(page, helvetica, formatImporto(totale), F24_COORD.saldoFinale.x, F24_COORD.saldoFinale.y)
+    drawAmountAtComma(page, helvetica, totale, F24_COORD.totaleO.commaX, F24_COORD.totaleO.y)
+    drawAmountAtComma(page, helvetica, totale, F24_COORD.saldoO.commaX, F24_COORD.saldoO.y)
+    drawAmountAtComma(page, helvetica, totale, F24_COORD.saldoFinale.commaX, F24_COORD.saldoFinale.y)
     drawChars(
       page,
       courier,

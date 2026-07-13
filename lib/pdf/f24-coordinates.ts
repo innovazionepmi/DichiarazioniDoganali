@@ -35,6 +35,16 @@ export const F24_COORD = {
   // di più disponibili più in alto — da verificare visivamente. Per ora
   // definiamo le prime 6 posizioni possibili (3 osservate + 3 stimate con
   // lo stesso passo), il generatore va in "pagina aggiuntiva" oltre queste.
+  //
+  // `codiceIdentificativo`: colonna larga da x=111.6 a x=198.0 (misurato sui
+  // bordi casella del modulo vuoto) — `x` e `maxWidth` tengono il testo
+  // dentro il bordo anche per codici lunghi (il generatore riduce il
+  // font-size se serve, vedi f24-generator.ts).
+  // `importoCommaX`: la colonna "importi a debito versati" ha una virgola
+  // pre-stampata sul modulo per guidare l'allineamento dei decimali
+  // (misurata a x≈386); il generatore ancora la virgola del valore scritto
+  // a questa x invece di allineare a sinistra, così l'allineamento è
+  // corretto per qualunque numero di cifre intere.
   accise: {
     primaRigaY: 233,
     passoRiga: 12,
@@ -42,14 +52,17 @@ export const F24_COORD = {
     ente: 22,
     provincia: [44, 57],
     codiceTributo: 80,
-    codiceIdentificativo: 129,
+    codiceIdentificativo: { x: 114, maxWidth: 82 },
     anno: 283,
-    importo: 373,
+    importoCommaX: 386,
   },
 
-  totaleO: { x: 373, y: 149 },
-  saldoO: { x: 546, y: 149 },
-  saldoFinale: { x: 546, y: 123 },
+  // Stessa virgola pre-stampata anche per TOTALE O (stessa colonna
+  // dell'importo accise, quindi stesso commaX) e per SALDO (O) / SALDO
+  // FINALE (colonna più a destra, commaX misurato a x≈556).
+  totaleO: { commaX: 386, y: 149 },
+  saldoO: { commaX: 556, y: 149 },
+  saldoFinale: { commaX: 556, y: 123 },
 
   dataScadenza: {
     // giorno(2) mese(2) anno(4) = 8 caselle, ESTREMI DEL VERSAMENTO
