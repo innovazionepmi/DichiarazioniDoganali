@@ -2,13 +2,24 @@
 
 Ultimo aggiornamento: Fase 4 (dichiarazione doganale) — costruito il **client
 SOAP di invio verso ADM** (ambiente di test) e una sandbox `/impostazioni` →
-"Test invio ADM" per validare l'intera catena (XML fittizio → firma esterna
-Aruba → invio → esito) prima di collegarla a una dichiarazione reale. **Non
-ancora provato con una chiamata di rete reale** (solo test unitari su
-costruzione busta/parsing risposta, nessuna verifica end-to-end contro il
-vero endpoint ADM in questa sessione) — il primo giro vero tocca a te/Paolo
-in staging. Ancora da committare. Scritto per riprendere il lavoro in una
-sessione futura senza dover rileggere tutta la conversazione.
+"Test invio ADM". Primi due tentativi reali dell'utente hanno trovato due
+problemi distinti, entrambi diagnosticati e documentati (vedi sezione
+dedicata): un bug nostro nel client SOAP (**corretto**, CA custom errato) e
+un problema di **certificato sbagliato caricato** (Paolo ha il certificato
+di *firma* di test, non quello di *autenticazione* — servono entrambi ma
+sono due file distinti da ADM, **bloccato in attesa che Paolo scarichi
+quello giusto**). Codice non ancora committato. **Sessione chiusa in attesa
+della risposta di Paolo** — nessun lavoro attivo da fare finché non arriva
+il certificato giusto (vedi "Prossimi passi" per cosa fare quando arriva).
+
+**⚠️ Urgenza scadenza**: verificato via fonte esterna (Energix) che la
+finestra di presentazione del I semestre 2026 è **1 luglio – 30 settembre
+2026** — quindi già aperta ora. Motivo in più per sbloccare il certificato
+di autenticazione appena possibile. Vedi anche punto aperto sulla regola di
+periodicità più sotto.
+
+Scritto per riprendere il lavoro in una sessione futura senza dover
+rileggere tutta la conversazione.
 
 ## Cos'è questo progetto
 
@@ -480,8 +491,60 @@ reale — l'utente aveva chiesto esplicitamente di poterla testare così.
   altro, es. verificare i *nostri* certificati client — dettagli in memoria
   `project_xml_dogane_ricerca.md`). Confermato anche che il server richiede
   davvero il certificato client (comportamento atteso).
-- **Ancora da riprovare in staging** dopo questo fix: genera XML → Paolo
-  firma con Aruba → carica → invia → osserva IUT/esito reali.
+- **Secondo tentativo (dopo il fix sopra): trovato un problema di
+  certificato, non di codice** — nuovo errore, TLS alert 43 "unsupported
+  certificate" mandato dal server durante l'handshake. Verificato con
+  `openssl x509 -noout -text` sul certificato dentro `AgenziaDoganeMonopoli.p12`:
+  `Key Usage: critical, Non Repudiation` — questo è l'uso tipico di un
+  certificato di **firma**, non di un certificato di **autenticazione TLS**
+  (che servirebbe "Digital Signature" e/o Extended Key Usage clientAuth). Il
+  server rifiuta correttamente il certificato, seguendo lo standard X.509.
+  **Conclusione**: `AgenziaDoganeMonopoli.p12` è quasi certamente il
+  "Certificato di Firma UNICO ADM" (menzionato nel manuale, per l'ambiente
+  di addestramento) — **non** il "Certificato di autenticazione di
+  addestramento" che serve per la mutua TLS. Sono due certificati distinti,
+  generabili dalla stessa area PUDM (Gestione Certificati). **Bloccato in
+  attesa che Paolo generi/scarichi specificamente il "Certificato di
+  autenticazione"** (non quello di firma, che ha già) per l'ambiente di
+  addestramento — nessuna modifica di codice necessaria per questo, solo un
+  ricaricamento del file giusto da `/impostazioni` quando arriva.
+
+## Verifica esterna (Energix) su scadenze e periodicità
+
+Paolo ha girato due articoli di Energix
+(`dichiarazione-semestrale-di-consumo-per-lenergia-elettrica` e
+`istruzioni-dichiarazione-energia-elettrica-i-semestre-2026`), letti e
+confrontati con quanto già sapevamo (`project_xml_dogane_ricerca.md`,
+`project_dichiarazione_periodicita.md`):
+
+- **Confermato**: passaggio da annuale a semestrale (D.Lgs. 43/2025), invio
+  S2S/U2S tramite piattaforma ADM, firma secondo Circolare ADM 6/2022, Quadro
+  A/G tra quelli elencati. Nessun conflitto con quanto già costruito.
+- **Scadenza I semestre 2026: 1 luglio – 30 settembre 2026** (II semestre: 1
+  gennaio – 31 marzo dell'anno successivo). Non avevamo ancora una data
+  precisa in memoria — ora sì.
+- **Punto da verificare con Paolo, non ancora riconciliato**: gli articoli
+  dicono che restano **annuali** solo gli impianti in **cessione totale**
+  dell'energia o i soggetti che fanno **vettoriamento/distribuzione**. La
+  regola che usiamo nel codice (`impianti.diritto_licenza_dovuto` →
+  semestrale, vedi `project_dichiarazione_periodicita.md`) **non è
+  formalmente la stessa definizione** — potrebbe coincidere di fatto per gli
+  impianti di Paolo, ma non è verificato. **Da chiedere esplicitamente a
+  Paolo prima di fidarsi della colonna DB su tutti gli 86 impianti.**
+- **Nuovo obbligo dal 2026** (da verificare se rilevante): impianti ≤20kW che
+  vendono energia a consumatori finali ora devono dichiarare, prima forse no.
+
+## Nuovo requisito raccolto (non ancora costruito): riepilogo pre-invio reale
+
+L'utente ha chiesto che, quando si costruirà l'invio **reale** (collegamento
+tra il client SOAP già validato e `dichiarazioni_ee_semestrali`, non la
+sandbox di test), il tasto "Invia" **non** scateni subito la chiamata SOAP:
+deve prima mostrare una schermata di riepilogo con tutti i dati effettivi
+(Quadro A/G, periodo, contatori/letture, dichiarante) che l'operatore
+conferma esplicitamente. Motivo: sono dichiarazioni ufficiali con
+conseguenze fiscali/legali reali. Dettagli e "why" completi in memoria
+`project_riepilogo_pre_invio_reale.md`. Da rispettare quando si arriva a
+quell'incremento (vedi piano `foamy-jumping-manatee.md`).
 
 ## Bug importanti risolti in questa sessione (da ricordare)
 
@@ -504,13 +567,20 @@ reale — l'utente aveva chiesto esplicitamente di poterla testare così.
 Migration applicate, `/impostazioni` verificata in staging, certificato di
 test + CA root ADM già caricati e verificati. Quello che resta:
 
-1. **Ripeti il test della sandbox "Test invio ADM" in staging** dopo aver
-   pushato/deployato il fix del bug "unable to get local issuer certificate"
-   (vedi sezione dedicata sopra) — non serve rifare l'XML/la firma se li hai
-   ancora, basta ricaricare lo stesso file firmato e reinviare. Se ricompare
-   lo stesso errore, il deploy potrebbe non essere ancora aggiornato;
-   qualunque altro esito (successo o un errore diverso) è nuova informazione
-   utile.
+1. **Chiedi a Paolo il "Certificato di autenticazione" di addestramento**
+   (da PUDM → Gestione Certificati) — quello che ha già caricato
+   (`AgenziaDoganeMonopoli.p12`) è il **certificato di firma**, non va bene
+   per questo scopo (vedi sezione dedicata sopra per il dettaglio tecnico).
+   Quando arriva, sostituiscilo da `/impostazioni` → ambiente di test, poi
+   ripeti l'invio dalla sandbox "Test invio ADM" (stesso XML/firma già
+   pronti, se li hai ancora). **Urgente**: la finestra del I semestre 2026
+   (1 luglio – 30 settembre) è già aperta.
+1bis. **Chiedi conferma a Paolo sulla regola di periodicità**: verifica se
+   "resta annuale solo chi è in cessione totale o fa
+   vettoriamento/distribuzione" (fonte Energix) corrisponde davvero a
+   `diritto_licenza_dovuto=false` per tutti gli impianti, prima di fidarsi
+   della colonna DB in produzione. Vedi sezione "Verifica esterna (Energix)"
+   sopra.
 2. **Testa il tabellone `/tracking` in staging**: spunta dichiarazione per un
    impianto (1 o 2 semestri a seconda di "Diritto di licenza dovuto") e
    fattura per un cliente, ricarica la pagina e verifica che le spunte
