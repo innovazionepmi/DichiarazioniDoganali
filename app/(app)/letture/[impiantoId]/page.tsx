@@ -28,7 +28,13 @@ export default async function LettureImpiantoPage({
       .from("contatori")
       .select("id, matricola, pod, tipo, costante_k, lettura_iniziale")
       .eq("impianto_id", impiantoId)
-      .eq("attivo", true)
+      // Non filtriamo su attivo=true: un contatore sostituito a metà anno
+      // (brief §5.5) viene cessato ma le letture già inserite sui mesi in cui
+      // era attivo devono restare visibili nella vista di quell'anno. Il
+      // range di date individua i contatori rilevanti per l'anno selezionato
+      // indipendentemente dal flag attivo corrente.
+      .lte("data_attivazione", `${anno}-12-31`)
+      .or(`data_cessazione.is.null,data_cessazione.gte.${anno}-01-01`)
       .order("tipo")
       .order("matricola"),
   ])

@@ -1,8 +1,10 @@
 # Project status — Dichiarazione energia dogane
 
-Ultimo aggiornamento: applicato il design system "Jouletec" (brand del
-cliente) a tutta l'app, committato su `staging`. Scritto per riprendere il
-lavoro in una sessione futura senza dover rileggere tutta la conversazione.
+Ultimo aggiornamento: dopo il primo giro di test utente in staging, aggiunto
+il tabellone di tracking dichiarazioni/fatture e corretti due gap sulla
+gestione contatori/letture (vedi sezione dedicata più sotto) — non ancora
+committato su `staging`. Scritto per riprendere il lavoro in una sessione
+futura senza dover rileggere tutta la conversazione.
 
 ## Cos'è questo progetto
 
@@ -227,6 +229,49 @@ l'accessibilità/comportamento già funzionante su ~20 pagine).
   JavaScript nel browser (colori, font, dimensioni logo, contrasto
   pulsanti) — se ricapita, questo è un fallback valido.
 
+## Cosa è stato costruito — Tabellone tracking + fix letture (completo, da applicare la migration e testare in staging)
+
+Dopo il primo giro di test utente in staging, quattro richieste di verifica/modifica:
+
+- **Verificato (nessun bug)**: i valori mensili F1/F2/F3 inseriti (manuale, PDF,
+  screenshot) sono già delta mensili (kWh del mese), non letture cumulative
+  di registro — il "registro" cumulativo viene calcolato a partire da questi
+  (`lib/calc/registro.ts`), non il contrario. L'autoconsumo mensile
+  (produzione−immissione) non richiede quindi nessuna sottrazione rispetto al
+  mese precedente.
+- **Sostituzione contatore ora bloccante**: `analizzaPdfLetture`
+  (`lib/actions/letture.ts`) prima mostrava solo un avviso quando la
+  matricola nel PDF non corrispondeva a quella a DB per lo stesso POD, ma
+  continuava comunque a scrivere le letture sul contatore vecchio — avrebbe
+  rotto la lettura progressiva di registro (che riparte da 0 su un contatore
+  nuovo). Ora **blocca l'import** con un messaggio che istruisce l'operatore
+  a censire il nuovo contatore a mano dalla scheda impianto (nuova matricola,
+  stesso POD/tipo, `lettura_iniziale=0`) e cessare il vecchio prima di
+  ripetere l'import — scelta esplicita dell'utente rispetto
+  all'auto-creazione con conferma.
+- **Fix vista annuale Letture**: la pagina `/letture/[impiantoId]`
+  filtrava i contatori con `attivo=true`, quindi un contatore cessato a metà
+  anno (dopo una sostituzione) faceva sparire dalla vista i mesi già letti su
+  quel contatore. Ora il filtro è per range di date (`data_attivazione` /
+  `data_cessazione` vs. l'anno selezionato), indipendente dal flag `attivo`
+  corrente.
+- **Nuovo tabellone `/tracking`** (`app/(app)/tracking/`,
+  `components/tracking/tracking-table.tsx`, `lib/actions/tracking.ts`):
+  vista cliente espandibile → impianti, con spunte per dichiarazione inviata
+  (2 spunte per impianto se `diritto_licenza_dovuto=true`, 1° e 2° semestre;
+  1 spunta annuale altrimenti) e una spunta fattura emessa **per cliente per
+  anno** (non per impianto — scelta esplicita dell'utente: un cliente con più
+  impianti riceve un'unica fattura annuale). Nuove tabelle
+  `tracking_dichiarazioni` / `tracking_fatture`
+  (`supabase/migrations/20260714120001_tracking.sql`, **non ancora applicata
+  in staging** — va eseguita a mano via SQL Editor come le precedenti).
+  Regola di periodicità salvata anche in memoria per riuso nella Fase 4 (XML
+  dichiarazione doganale).
+- **Non ancora testato in staging**: build/lint/test passano e il dev server
+  parte senza errori, ma la verifica end-to-end nel browser richiede login
+  (nessuna credenziale disponibile in sessione) — va provato dall'utente
+  dopo aver applicato la migration.
+
 ## Bug importanti risolti in questa sessione (da ricordare)
 
 1. **Closure non serializzabile Server→Client**: passare `onSubmit={(formData) => updateX(id, formData)}` da una pagina Server Component a un form Client Component causava un crash in produzione (build locale non lo intercetta, solo runtime). Fix: usare sempre `updateX.bind(null, id)`. **Se aggiungi nuove pagine di dettaglio, usa questo pattern fin da subito.**
@@ -245,38 +290,34 @@ l'accessibilità/comportamento già funzionante su ~20 pagine).
 
 ## Prossimi passi immediati (da fare tu)
 
-1. **Configura `ANTHROPIC_API_KEY` su Vercel Project Settings** (già presente
+L'utente ha completato in questa sessione tutti i test della Fase 2/3/onboarding
+già segnalati in precedenza. Quello che resta:
+
+1. **Applica la nuova migration `20260714120001_tracking.sql`** via SQL
+   Editor di Supabase (come le precedenti) — senza questa il tabellone
+   `/tracking` risponde con un errore.
+2. **Testa il tabellone `/tracking` in staging**: spunta dichiarazione per un
+   impianto (1 o 2 semestri a seconda di "Diritto di licenza dovuto") e
+   fattura per un cliente, ricarica la pagina e verifica che le spunte
+   restino salvate. Cambia anno dal selettore e verifica che il filtro
+   partner resti applicato (fix di questa sessione).
+3. **Ri-testa l'import PDF letture con una matricola diversa da quella a DB**
+   (sostituzione contatore): ora l'import deve **bloccarsi** con un
+   messaggio che chiede di creare il nuovo contatore a mano e cessare il
+   vecchio, non più solo avvisare e importare comunque.
+4. **Configura `ANTHROPIC_API_KEY` su Vercel Project Settings** (già presente
    in `.env.local` ma non ancora replicata in produzione) — senza questa, il
    bottone "Importa da licenza PDF" mostra un errore chiaro invece di un
    crash, ma non è utilizzabile.
-2. **Dai un'occhiata visiva al nuovo look Jouletec in staging** — non sono
-   riuscito a produrre uno screenshot in questa sessione (tool bloccato),
-   l'ho verificato solo via CSS calcolato. Controlla in particolare: logo
-   sidebar, colore/contrasto dei pulsanti, campi input, badge di stato.
-3. **Testa l'onboarding da licenza PDF in staging**: dalla lista clienti,
-   "Importa da licenza PDF", carica un documento reale. Verifica che i campi
-   estratti siano corretti (o correggili a mano — è previsto), scegli
-   nuovo/esistente cliente, conferma, controlla che cliente/impianto/PDF
-   siano stati creati correttamente.
-4. **Testa la Fase 3 (F24) in staging**: vai su un cliente di test con
-   anagrafica completa (sezione "Dati per F24") e almeno un impianto con
-   "Diritto di licenza dovuto" attivo, apri la scheda cliente → sezione
-   "Diritto di licenza" → "Genera F24". Verifica che il PDF scaricato abbia
-   i dati nelle caselle giuste. L'invio email resta bloccato finché non
-   configuri Brevo (`SMTP_HOST`/`SMTP_USER`/`SMTP_PASSWORD`/`EMAIL_FROM` su
-   Vercel Project Settings) — fino ad allora vedrai un errore chiaro sul
-   bottone "OK invio", che è normale.
 5. Se un cliente ha più impianti con diritto di licenza di quanti ne entrano
-   nel modulo (stimato 6 righe), dimmelo: il codice al momento tronca le
+   nel modulo F24 (stimato 6 righe), dimmelo: il codice al momento tronca le
    righe in eccesso, va deciso se passare alla generazione multi-pagina.
-6. **Testa l'import PDF letture end-to-end in staging** (se non ancora
-   fatto): vai su un impianto con contatori collegati, apri Letture →
-   "Importa da PDF E-distribuzione", carica un PDF reale. Verifica anteprima,
-   conferma, upsert senza duplicati.
-7. Quando tutto funziona: dammi conferma esplicita e ti guido nel merge
+6. Quando tutto funziona: dammi conferma esplicita e ti guido nel merge
    `staging` → `main` (primo deploy di produzione) — oppure procediamo con
-   il prossimo incremento (dichiarazione doganale Quadri A/G/L) a tua scelta.
-8. (Opzionale) elimina l'utente di test `claude-test@example.com` da
+   il prossimo incremento (dichiarazione doganale Quadri A/G/L, che dovrà
+   tenere conto della periodicità semestrale/annuale — vedi memoria salvata)
+   a tua scelta.
+7. (Opzionale) elimina l'utente di test `claude-test@example.com` da
    Supabase Auth Dashboard.
 
 ## File utili per orientarsi
@@ -291,4 +332,5 @@ l'accessibilità/comportamento già funzionante su ~20 pagine).
 - F24: `lib/pdf/f24-generator.ts` (+ `.test.ts`, coordinate in `f24-coordinates.ts`), `lib/actions/f24.ts`, email: `lib/email/client.ts`, UI: `components/clienti/f24-section.tsx`
 - Onboarding licenza: `lib/pdf/rasterizza-pagine.ts` (+ `.test.ts`), `lib/ai/estrai-licenza.ts`, `lib/actions/onboarding.ts`, `lib/validation/licenza.schema.ts`, UI: `components/clienti/onboarding-licenza-dialog.tsx`
 - Design system Jouletec: token in `app/globals.css`, font in `app/layout.tsx`, sidebar in `app/(app)/layout.tsx`, progetto Claude Design originale (per rivedere componenti/guideline non ancora applicati): `projectId 3b848f67-8e2f-48b0-bdbc-8d52f62d1fbb` via `DesignSync`
+- Tracking dichiarazioni/fatture: `app/(app)/tracking/`, `components/tracking/tracking-table.tsx`, `lib/actions/tracking.ts`, migration `supabase/migrations/20260714120001_tracking.sql`
 - Setup locale: [`README.md`](./README.md)

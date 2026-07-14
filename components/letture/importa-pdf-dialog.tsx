@@ -212,14 +212,6 @@ export function ImportaPdfDialog({
                 )
               })()}
 
-              {analisi.sostituzioneSospetta && (
-                <div className="rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
-                  Possibile sostituzione contatore: la matricola nel PDF non
-                  corrisponde a quella registrata per questo POD. Verifica
-                  prima di importare.
-                </div>
-              )}
-
               {analisi.avvisi.length > 0 && (
                 <ul className="list-disc pl-5 text-sm text-muted-foreground">
                   {analisi.avvisi.map((avviso) => (

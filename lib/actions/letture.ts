@@ -79,7 +79,6 @@ export type AnalisiPdfResult =
       contatoreId: string
       contatoreMatricola: string
       avvisi: string[]
-      sostituzioneSospetta: boolean
       righe: RigaDiffPdf[]
     }
 
@@ -147,14 +146,28 @@ export async function analizzaPdfLetture(
   }
   const contatore = contatoriTrovati[0]
 
-  const avvisi = [...parsed.avvisi]
-  const sostituzioneSospetta =
-    parsed.matricola !== null && parsed.matricola !== contatore.matricola
-  if (sostituzioneSospetta) {
-    avvisi.push(
-      `La matricola nel PDF (${parsed.matricola}) non corrisponde a quella registrata (${contatore.matricola}) per questo POD: possibile sostituzione contatore. Verifica prima di importare.`
-    )
+  // Sostituzione contatore (brief §5.5): la matricola nel PDF non corrisponde
+  // a quella a DB per lo stesso POD. Blocchiamo l'import invece di limitarci
+  // ad avvisare: scrivere comunque le letture sul contatore vecchio
+  // mischierebbe le letture del contatore nuovo (che ripartono da zero) con
+  // la sua storia, rompendo la lettura progressiva di registro
+  // (lettura_iniziale + somma valori / K, vedi lib/calc/registro.ts).
+  // L'operatore deve prima censire il nuovo contatore a mano dalla scheda
+  // impianto (nuova matricola, stesso POD/tipo, lettura_iniziale=0) e cessare
+  // il vecchio, poi ripetere l'import: a quel punto la ricerca per POD sopra
+  // troverà il contatore giusto.
+  if (parsed.matricola !== null && parsed.matricola !== contatore.matricola) {
+    return {
+      error:
+        `La matricola nel PDF (${parsed.matricola}) non corrisponde a quella registrata ` +
+        `(${contatore.matricola}) per il POD ${parsed.pod}: probabile sostituzione contatore. ` +
+        `Vai sulla scheda impianto e crea il nuovo contatore (stesso POD e tipo, matricola ` +
+        `${parsed.matricola}, lettura iniziale 0), imposta la data di cessazione sul contatore ` +
+        `vecchio, poi ripeti l'import.`,
+    }
   }
+
+  const avvisi = [...parsed.avvisi]
 
   const anniCoinvolti = Array.from(new Set(parsed.letture.map((l) => l.anno)))
   const { data: lettureEsistenti } = await supabase
@@ -198,7 +211,6 @@ export async function analizzaPdfLetture(
     contatoreId: contatore.id,
     contatoreMatricola: contatore.matricola,
     avvisi,
-    sostituzioneSospetta,
     righe,
   }
 }
