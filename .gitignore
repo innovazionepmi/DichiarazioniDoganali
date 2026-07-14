@@ -23,6 +23,11 @@
 # misc
 .DS_Store
 *.pem
+# Eccezione deliberata: certificati CA root pubblici di ADM (autofirmati, mai
+# una chiave privata) — servono come trust anchor per il client HTTPS del
+# servizio di invio dichiarazioni, vedi lib/adm/certificati/.
+!lib/adm/certificati/ca-test.pem
+!lib/adm/certificati/ca-produzione.pem
 
 # debug
 npm-debug.log*

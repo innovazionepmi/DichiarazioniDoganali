@@ -1,11 +1,15 @@
 # Project status — Dichiarazione energia dogane
 
-Ultimo aggiornamento: Fase 4 (dichiarazione doganale) — dopo aver scoperto che
-la generazione XML da sola non basta (serve invio S2S vero, vedi sezione
-dedicata), aggiunta la prima parte dell'infrastruttura di invio: gestione del
-certificato di autenticazione ADM (`/impostazioni`). Non ancora committato su
-`staging`. Scritto per riprendere il lavoro in una sessione futura senza
-dover rileggere tutta la conversazione.
+Ultimo aggiornamento: Fase 4 (dichiarazione doganale) — infrastruttura di
+gestione del certificato di autenticazione ADM (`/impostazioni`) costruita e
+**verificata in staging**. **Paolo ha già fornito il certificato di test**
+(verificato con OpenSSL, corretto e funzionante) + i due CA root ADM,
+copiati nel repo — manca ancora solo il certificato client di
+**produzione** (Paolo ha per ora solo il CA root di quell'ambiente). Il
+prossimo pezzo (client SOAP di invio vero e proprio verso l'ambiente di
+test) è quindi **sbloccato e pronto per partire** — non ancora costruito.
+Ancora da committare (vedi "Prossimi passi"). Scritto per riprendere il
+lavoro in una sessione futura senza dover rileggere tutta la conversazione.
 
 ## Cos'è questo progetto
 
@@ -348,7 +352,7 @@ vendesse a terzi, andrà esteso (fuori scope per ora — vedi piano salvato in
   XML di esempio reale da ADM, confrontarlo prima di dare per buona
   l'assunzione.
 
-## Cosa è stato costruito — Fase 4, invio S2S: gestione certificato ADM (primo pezzo, da testare in staging)
+## Cosa è stato costruito — Fase 4, invio S2S: gestione certificato ADM (primo pezzo, verificato in staging)
 
 Dopo aver scoperto che la generazione XML da sola non basta (vedi sopra),
 piano completo per l'invio S2S concordato con l'utente — **solo il primo
@@ -383,7 +387,7 @@ ADM**, normale per un sistema appena lanciato):
 
 **Costruito in questa sessione — gestione certificato di autenticazione ADM**:
 - Nuova tabella `certificati_adm` (`supabase/migrations/20260714140001_certificati_adm.sql`,
-  **non ancora applicata in staging**): un certificato per ambiente
+  **applicata in staging**): un certificato per ambiente
   (`test`/`produzione`), il contenuto (certificato + password opzionale, in
   JSON) vive **cifrato in Supabase Vault**, mai in chiaro nel DB — stesso
   meccanismo già usato per le credenziali E-distribuzione/GSE
@@ -396,14 +400,28 @@ ADM**, normale per un sistema appena lanciato):
 - **UI**: nuova pagina `/impostazioni` (`components/impostazioni/certificato-adm-section.tsx`),
   due riquadri (test/produzione) con stato attuale (nome file, data
   caricamento, scadenza con badge — rosso se scaduto, giallo se entro 30
-  giorni) e form di caricamento/sostituzione. Il formato esatto del
-  certificato di Paolo (p12/pfx con password? altro?) non è ancora noto: il
-  contenuto viene conservato opaco (base64 + password libera) apposta, per
-  non dover ridisegnare lo schema quando arriva quello vero.
-- **Non ancora costruito**: il client SOAP che userà questo certificato
-  (upload XML firmato, invio test/reale, recupero esito, generazione
-  PDF/protocollo nostri) — prossimo pezzo, quando Paolo avrà ottenuto almeno
-  il certificato di test da ADM.
+  giorni) e form di caricamento/sostituzione.
+- **Verificato in staging dall'utente**: caricati file di prova su entrambi
+  gli ambienti (test e produzione), confermato che compaiono correttamente
+  come "caricato il..." nella UI — il meccanismo di salvataggio
+  cifrato/sostituzione funziona end-to-end.
+- **Certificati reali ricevuti da Paolo e verificati con OpenSSL**: format
+  confermato — `AgenziaDoganeMonopoli.p12` (certificato client, **solo
+  ambiente di test**, valido fino al 2027, password condivisa privatamente
+  con l'utente e mai committata) va caricato in `/impostazioni` esattamente
+  come progettato. I due CA root (`CADoganeTest.pem`/`CADoganeMonopoli.pem`)
+  sono **pubblici** (non segreti, autofirmati, validi fino al 2038): copiati
+  nel repo come asset statici in `lib/adm/certificati/ca-test.pem` e
+  `ca-produzione.pem` (eccezione mirata in `.gitignore`, che ha una regola
+  generale `*.pem` per sicurezza — servono come trust anchor TLS per il
+  futuro client SOAP). **Manca ancora il certificato client per l'ambiente
+  di produzione** (Paolo ha ricevuto solo il CA root per quell'ambiente): fino
+  a quando non lo richiede, si può lavorare solo in ambiente di test — va
+  benissimo per iniziare.
+- **Prossimo pezzo**: il client SOAP vero e proprio (upload XML firmato,
+  invio verso l'ambiente di test, recupero esito, generazione PDF/protocollo
+  nostri) — ora sbloccato, abbiamo certificato di test + CA root reali.
+  Dettagli completi in memoria `project_xml_dogane_ricerca.md`.
 
 ## Bug importanti risolti in questa sessione (da ricordare)
 
@@ -423,31 +441,20 @@ ADM**, normale per un sistema appena lanciato):
 
 ## Prossimi passi immediati (da fare tu)
 
-L'utente ha completato in questa sessione tutti i test della Fase 2/3/onboarding
-già segnalati in precedenza. Quello che resta:
+Migration applicate, `/impostazioni` verificata in staging, certificato di
+test + CA root ADM già ricevuti e verificati (vedi sezione dedicata sopra).
+Quello che resta:
 
-1. **Applica le nuove migration** via SQL Editor di Supabase (come le
-   precedenti, in ordine): `20260714120001_tracking.sql`,
-   `20260714130001_dichiarazioni_ee_semestrali.sql` e
-   `20260714140001_certificati_adm.sql` — senza queste il tabellone
-   `/tracking`, la sezione "Dichiarazione energia elettrica" e la pagina
-   `/impostazioni` rispondono con un errore.
-2. **Chiedi a Paolo il certificato di autenticazione ADM (ambiente di
-   test)**: gli hai già mandato le istruzioni (accesso PUDM con SPID/CNS,
-   profili `dlr_enelettr` + `dlr_gestione_certificati_aut`, generazione da
-   Gestione Certificati) — appena arriva, caricalo da `/impostazioni` in
-   staging. Senza questo non si può ancora testare l'invio vero e proprio
-   (il client SOAP non è ancora stato costruito, sarà il prossimo pezzo).
-3. **Testa il tabellone `/tracking` in staging**: spunta dichiarazione per un
+1. **Testa il tabellone `/tracking` in staging**: spunta dichiarazione per un
    impianto (1 o 2 semestri a seconda di "Diritto di licenza dovuto") e
    fattura per un cliente, ricarica la pagina e verifica che le spunte
    restino salvate. Cambia anno dal selettore e verifica che il filtro
    partner resti applicato (fix di questa sessione).
-4. **Ri-testa l'import PDF letture con una matricola diversa da quella a DB**
+2. **Ri-testa l'import PDF letture con una matricola diversa da quella a DB**
    (sostituzione contatore): ora l'import deve **bloccarsi** con un
    messaggio che chiede di creare il nuovo contatore a mano e cessare il
    vecchio, non più solo avvisare e importare comunque.
-5. **Testa la generazione della dichiarazione XML in staging**: su un impianto
+3. **Testa la generazione della dichiarazione XML in staging**: su un impianto
    di test, compila `codice_impianto_f24` (formato AAA00000A) e
    `codice_distributore_zona` (codice ditta/accisa del distributore, es.
    E-Distribuzione — va reperito, ogni distributore lo pubblica sul proprio
@@ -459,17 +466,25 @@ già segnalati in precedenza. Quello che resta:
    ancora da nessuna parte**: l'unico canale di invio (S2S) non è ancora
    collegato all'app — il generatore XML per ora produce solo il file, la
    parte "invio" è in costruzione (vedi sezione Fase 4/invio S2S sopra).
-6. **Configura `ANTHROPIC_API_KEY` su Vercel Project Settings** (già presente
+4. **Configura `ANTHROPIC_API_KEY` su Vercel Project Settings** (già presente
    in `.env.local` ma non ancora replicata in produzione) — senza questa, il
    bottone "Importa da licenza PDF" mostra un errore chiaro invece di un
    crash, ma non è utilizzabile.
-7. Se un cliente ha più impianti con diritto di licenza di quanti ne entrano
+5. Se un cliente ha più impianti con diritto di licenza di quanti ne entrano
    nel modulo F24 (stimato 6 righe), dimmelo: il codice al momento tronca le
    righe in eccesso, va deciso se passare alla generazione multi-pagina.
-8. Quando tutto funziona: dammi conferma esplicita e ti guido nel merge
-   `staging` → `main` (primo deploy di produzione) — oppure procediamo col
-   prossimo incremento della Fase 4 (client SOAP per l'invio vero, appena
-   Paolo ha il certificato di test) a tua scelta.
+6. Quando tutto funziona: dammi conferma esplicita e ti guido nel merge
+   `staging` → `main` (primo deploy di produzione) — non è necessario
+   aspettare il certificato ADM per farlo, se preferisci procedere.
+7. **Carica il certificato di test da `/impostazioni`** (file
+   `AgenziaDoganeMonopoli.p12`, password nota — te l'ha data Paolo in chat),
+   così è pronto per quando costruiamo il client SOAP di invio (prossimo
+   incremento — upload XML firmato, invio verso l'ambiente di test, recupero
+   esito, generazione PDF/protocollo nostri; piano di test già condiviso in
+   conversazione).
+8. Quando sarete pronti per l'invio reale, chiedi a Paolo anche il
+   **certificato client di produzione** (per ora ha solo il CA root di
+   quell'ambiente) — stesso percorso PUDM già usato per quello di test.
 9. (Opzionale) elimina l'utente di test `claude-test@example.com` da
    Supabase Auth Dashboard.
 
