@@ -1,15 +1,14 @@
 # Project status — Dichiarazione energia dogane
 
-Ultimo aggiornamento: Fase 4 (dichiarazione doganale) — infrastruttura di
-gestione del certificato di autenticazione ADM (`/impostazioni`) costruita e
-**verificata in staging**. **Paolo ha già fornito il certificato di test**
-(verificato con OpenSSL, corretto e funzionante) + i due CA root ADM,
-copiati nel repo — manca ancora solo il certificato client di
-**produzione** (Paolo ha per ora solo il CA root di quell'ambiente). Il
-prossimo pezzo (client SOAP di invio vero e proprio verso l'ambiente di
-test) è quindi **sbloccato e pronto per partire** — non ancora costruito.
-Ancora da committare (vedi "Prossimi passi"). Scritto per riprendere il
-lavoro in una sessione futura senza dover rileggere tutta la conversazione.
+Ultimo aggiornamento: Fase 4 (dichiarazione doganale) — costruito il **client
+SOAP di invio verso ADM** (ambiente di test) e una sandbox `/impostazioni` →
+"Test invio ADM" per validare l'intera catena (XML fittizio → firma esterna
+Aruba → invio → esito) prima di collegarla a una dichiarazione reale. **Non
+ancora provato con una chiamata di rete reale** (solo test unitari su
+costruzione busta/parsing risposta, nessuna verifica end-to-end contro il
+vero endpoint ADM in questa sessione) — il primo giro vero tocca a te/Paolo
+in staging. Ancora da committare. Scritto per riprendere il lavoro in una
+sessione futura senza dover rileggere tutta la conversazione.
 
 ## Cos'è questo progetto
 
@@ -423,6 +422,56 @@ ADM**, normale per un sistema appena lanciato):
   nostri) — ora sbloccato, abbiamo certificato di test + CA root reali.
   Dettagli completi in memoria `project_xml_dogane_ricerca.md`.
 
+## Cosa è stato costruito — Fase 4, invio S2S: client SOAP + sandbox di test (da provare in staging)
+
+Il pezzo che mancava: invio vero e proprio verso ADM. Costruito come
+**sandbox isolata con dati fittizi** (nessun impianto/cliente reale
+coinvolto, nessuna scrittura su `dichiarazioni_ee_semestrali`) apposta per
+validare tutta la catena tecnica prima di collegarla alla dichiarazione
+reale — l'utente aveva chiesto esplicitamente di poterla testare così.
+
+- **Client SOAP** (`lib/adm/soap-client.ts` + `lib/adm/soap-envelope.ts`):
+  costruisce la busta SOAP, invia via Node `https` con mutua TLS
+  (`pfx`/`passphrase`/`ca` — non `fetch`/undici, che non espone comodamente
+  il certificato client), interpreta la risposta (successo, SOAP Fault, o
+  esito ADM negativo). Logica pura (costruzione busta, parsing, mappa codici
+  → categoria) separata in `soap-envelope.ts` apposta per essere testabile
+  senza mock di rete/Supabase (`soap-client.ts` ha `import "server-only"`,
+  che rompe i test se non isolato). Nuova dipendenza `fast-xml-parser`
+  (pura JS, nessun binding nativo).
+- **Endpoint implementati**: invio (`EEsemestraliM24Service.process`) e
+  controllo stato (`InteropRService/selezionaStato/{iut}`, REST — l'unico
+  documentato con un esempio concreto nel manuale ADM). **Non implementato**:
+  il recupero della busta ESITO completa via SOAP
+  (`InteropService.recuperaEsito`) — la struttura esatta del messaggio non è
+  confermata su nessun esempio reale, rischioso costruirla alla cieca;
+  rimandato a quando avremo un IUT vero da verificare empiricamente.
+- **Gestione errori categorizzata e persistente**, come richiesto
+  esplicitamente dall'utente (memoria `project_gestione_errori_invio_adm.md`):
+  nuovo componente riusabile `components/shared/errore-persistente-dialog.tsx`
+  — un `Dialog` che ignora deliberatamente la chiusura da backdrop/ESC,
+  chiudibile solo col bottone "OK, capito". Categorie: certificato, XML
+  malformato, rete, esito negativo ADM, altro — mappate dai codici di
+  stato/errore ADM documentati nel manuale operativo.
+- **Sandbox UI** (`/impostazioni` → "Test invio ADM (dati fittizi)",
+  `components/impostazioni/test-invio-adm-section.tsx`): tre passi — genera
+  XML fittizio (Quadro A+G con matricole/codice ditta palesemente finti,
+  riusa lo stesso generatore di produzione) e scaricalo; carica il file
+  firmato con Aruba Sign + codice fiscale del sottoscrittore e invia
+  (ambiente di test); controlla lo stato con il IUT ottenuto. Il campo
+  "codice fiscale sottoscrittore" non è salvato da nessuna parte per ora
+  (va reinserito ogni volta) — deliberato, promuoveremo a impostazione solo
+  se si rivela scomodo nell'uso reale.
+- **Test**: `lib/adm/soap-envelope.test.ts` (16 test — costruzione busta,
+  parsing risposta successo/Fault/esito negativo, categorizzazione errori
+  di connessione) e `lib/xml/dichiarazione-test-fittizia.test.ts` (3 test).
+  52 test totali nel progetto, tutti verdi.
+- **Non ancora testato con una chiamata di rete reale**: build/lint/test
+  passano, ma nessuna verifica end-to-end contro il vero endpoint ADM in
+  questa sessione (non c'è modo di autenticarsi in staging da qui) — il
+  primo vero giro (genera XML → Paolo firma con Aruba → carica → invia →
+  osserva IUT/esito reali) spetta all'utente.
+
 ## Bug importanti risolti in questa sessione (da ricordare)
 
 1. **Closure non serializzabile Server→Client**: passare `onSubmit={(formData) => updateX(id, formData)}` da una pagina Server Component a un form Client Component causava un crash in produzione (build locale non lo intercetta, solo runtime). Fix: usare sempre `updateX.bind(null, id)`. **Se aggiungi nuove pagine di dettaglio, usa questo pattern fin da subito.**
@@ -442,49 +491,54 @@ ADM**, normale per un sistema appena lanciato):
 ## Prossimi passi immediati (da fare tu)
 
 Migration applicate, `/impostazioni` verificata in staging, certificato di
-test + CA root ADM già ricevuti e verificati (vedi sezione dedicata sopra).
-Quello che resta:
+test + CA root ADM già caricati e verificati. Quello che resta:
 
-1. **Testa il tabellone `/tracking` in staging**: spunta dichiarazione per un
+1. **Testa la sandbox "Test invio ADM" in staging (priorità alta, primo
+   vero collaudo di rete di tutto questo lavoro)**: da `/impostazioni`,
+   genera l'XML di test, fallo firmare a Paolo con Aruba Sign (firma remota
+   OTP), carica il file firmato + il codice fiscale del sottoscrittore,
+   invia. Osserva cosa torna: IUT ed esito, oppure — se qualcosa non va —
+   verifica che l'errore mostrato sia effettivamente chiaro e categorizzato
+   (finestra persistente con "OK, capito", non un avviso che sparisce da
+   solo). Poi prova anche "Controlla stato" con il IUT ottenuto. Qualunque
+   cosa succeda (anche un errore), è informazione utile: è la primissima
+   chiamata di rete reale di questo progetto verso ADM, non l'abbiamo mai
+   potuta testare da qui.
+2. **Testa il tabellone `/tracking` in staging**: spunta dichiarazione per un
    impianto (1 o 2 semestri a seconda di "Diritto di licenza dovuto") e
    fattura per un cliente, ricarica la pagina e verifica che le spunte
    restino salvate. Cambia anno dal selettore e verifica che il filtro
    partner resti applicato (fix di questa sessione).
-2. **Ri-testa l'import PDF letture con una matricola diversa da quella a DB**
+3. **Ri-testa l'import PDF letture con una matricola diversa da quella a DB**
    (sostituzione contatore): ora l'import deve **bloccarsi** con un
    messaggio che chiede di creare il nuovo contatore a mano e cessare il
    vecchio, non più solo avvisare e importare comunque.
-3. **Testa la generazione della dichiarazione XML in staging**: su un impianto
+4. **Testa la generazione della dichiarazione XML in staging**: su un impianto
    di test, compila `codice_impianto_f24` (formato AAA00000A) e
    `codice_distributore_zona` (codice ditta/accisa del distributore, es.
    E-Distribuzione — va reperito, ogni distributore lo pubblica sul proprio
    sito), inserisci letture complete per un semestre su almeno un contatore
    di produzione (e uno di immissione se vuoi testare anche il Quadro G),
    poi vai sulla scheda impianto → "Genera dichiarazione". Se mancano dati,
-   vedrai un errore esplicito con l'elenco di cosa manca. Apri l'XML
-   scaricato e controlla a occhio che i valori tornino. **Non inviarlo
-   ancora da nessuna parte**: l'unico canale di invio (S2S) non è ancora
-   collegato all'app — il generatore XML per ora produce solo il file, la
-   parte "invio" è in costruzione (vedi sezione Fase 4/invio S2S sopra).
-4. **Configura `ANTHROPIC_API_KEY` su Vercel Project Settings** (già presente
+   vedrai un errore esplicito con l'elenco di cosa manca. **Non inviarlo
+   ancora da nessuna parte**: questa dichiarazione (quella reale, non la
+   sandbox di test) non è ancora collegata al client SOAP — resta un pezzo
+   da fare dopo che il punto 1 avrà validato che l'invio funziona.
+5. **Configura `ANTHROPIC_API_KEY` su Vercel Project Settings** (già presente
    in `.env.local` ma non ancora replicata in produzione) — senza questa, il
    bottone "Importa da licenza PDF" mostra un errore chiaro invece di un
    crash, ma non è utilizzabile.
-5. Se un cliente ha più impianti con diritto di licenza di quanti ne entrano
+6. Se un cliente ha più impianti con diritto di licenza di quanti ne entrano
    nel modulo F24 (stimato 6 righe), dimmelo: il codice al momento tronca le
    righe in eccesso, va deciso se passare alla generazione multi-pagina.
-6. Quando tutto funziona: dammi conferma esplicita e ti guido nel merge
+7. Quando tutto funziona: dammi conferma esplicita e ti guido nel merge
    `staging` → `main` (primo deploy di produzione) — non è necessario
-   aspettare il certificato ADM per farlo, se preferisci procedere.
-7. **Carica il certificato di test da `/impostazioni`** (file
-   `AgenziaDoganeMonopoli.p12`, password nota — te l'ha data Paolo in chat),
-   così è pronto per quando costruiamo il client SOAP di invio (prossimo
-   incremento — upload XML firmato, invio verso l'ambiente di test, recupero
-   esito, generazione PDF/protocollo nostri; piano di test già condiviso in
-   conversazione).
-8. Quando sarete pronti per l'invio reale, chiedi a Paolo anche il
-   **certificato client di produzione** (per ora ha solo il CA root di
-   quell'ambiente) — stesso percorso PUDM già usato per quello di test.
+   aspettare che l'invio reale sia collegato per farlo, se preferisci
+   procedere prima.
+8. Quando sarete pronti per l'invio reale (non di test), chiedi a Paolo
+   anche il **certificato client di produzione** (per ora ha solo il CA
+   root di quell'ambiente) — stesso percorso PUDM già usato per quello di
+   test.
 9. (Opzionale) elimina l'utente di test `claude-test@example.com` da
    Supabase Auth Dashboard.
 
@@ -503,4 +557,5 @@ Quello che resta:
 - Design system Jouletec: token in `app/globals.css`, font in `app/layout.tsx`, sidebar in `app/(app)/layout.tsx`, progetto Claude Design originale (per rivedere componenti/guideline non ancora applicati): `projectId 3b848f67-8e2f-48b0-bdbc-8d52f62d1fbb` via `DesignSync`
 - Tracking dichiarazioni/fatture: `app/(app)/tracking/`, `components/tracking/tracking-table.tsx`, `lib/actions/tracking.ts`, migration `supabase/migrations/20260714120001_tracking.sql`
 - Certificato autenticazione ADM (invio S2S): `app/(app)/impostazioni/`, `components/impostazioni/certificato-adm-section.tsx`, `lib/actions/certificati-adm.ts`, migration `supabase/migrations/20260714140001_certificati_adm.sql`
+- Client SOAP invio ADM + sandbox di test: `lib/adm/soap-client.ts` (orchestrazione, `server-only`), `lib/adm/soap-envelope.ts` (+ `.test.ts`, logica pura), `lib/xml/dichiarazione-test-fittizia.ts` (+ `.test.ts`), `lib/actions/adm-test.ts`, UI: `components/impostazioni/test-invio-adm-section.tsx`, errore persistente riusabile: `components/shared/errore-persistente-dialog.tsx`, CA root ADM: `lib/adm/certificati/`
 - Setup locale: [`README.md`](./README.md)
