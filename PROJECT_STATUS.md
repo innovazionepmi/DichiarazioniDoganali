@@ -1,10 +1,11 @@
 # Project status — Dichiarazione energia dogane
 
-Ultimo aggiornamento: dopo il primo giro di test utente in staging, aggiunto
-il tabellone di tracking dichiarazioni/fatture e corretti due gap sulla
-gestione contatori/letture (vedi sezione dedicata più sotto) — non ancora
-committato su `staging`. Scritto per riprendere il lavoro in una sessione
-futura senza dover rileggere tutta la conversazione.
+Ultimo aggiornamento: Fase 4 (dichiarazione doganale) — dopo aver scoperto che
+la generazione XML da sola non basta (serve invio S2S vero, vedi sezione
+dedicata), aggiunta la prima parte dell'infrastruttura di invio: gestione del
+certificato di autenticazione ADM (`/impostazioni`). Non ancora committato su
+`staging`. Scritto per riprendere il lavoro in una sessione futura senza
+dover rileggere tutta la conversazione.
 
 ## Cos'è questo progetto
 
@@ -126,9 +127,9 @@ esplicita dell'utente, da chiarire prima di Fase 4 (dichiarazione).
   `generaF24` risponde con l'elenco dei campi mancanti). L'invio email resta
   bloccato finché l'utente non configura Brevo su Vercel.
 
-**Deliberatamente non ancora costruito**: generazione registro letture PDF,
-XML Dogane (esplicitamente gated: "per i dettagli specifici del XML ti
-istruisco in seguito"), tracking dashboard — Fase 4/5 del brief.
+**Deliberatamente non ancora costruito**: generazione registro letture PDF —
+Fase 4/5 del brief. XML Dogane e tracking dashboard: vedi sezioni dedicate più
+sotto, ora in costruzione.
 
 ## Cosa è stato costruito — Onboarding cliente/impianto da licenza PDF (completo, da testare in staging)
 
@@ -272,6 +273,138 @@ Dopo il primo giro di test utente in staging, quattro richieste di verifica/modi
   (nessuna credenziale disponibile in sessione) — va provato dall'utente
   dopo aver applicato la migration.
 
+## Cosa è stato costruito — Fase 4, dichiarazione XML semestrale (Quadro A+G, da testare in staging)
+
+Prima parte della Fase 4 (dichiarazione doganale). Ricerca approfondita della
+documentazione ADM (XSD, tracciati Excel, istruzioni ufficiali scaricate dal
+sito) salvata in memoria — vedi `project_xml_dogane_ricerca.md`. Punto chiave
+emerso: per il profilo "officina di produzione da fonti rinnovabili uso
+proprio esente" (autoconsumo + eccedenza immessa in rete, **senza** vendita a
+consumatori finali/consorziati/consociati — il caso tipico dei clienti di
+Paolo), le istruzioni ADM dicono esplicitamente che i quadri di liquidazione
+dell'accisa (J/L/M/Q/S) **non vanno compilati**: bastano **Quadro A
+(produzione) + Quadro G (cessione alla rete)**. Se un domani un cliente
+vendesse a terzi, andrà esteso (fuori scope per ora — vedi piano salvato in
+`C:\Users\Emilio\.claude\plans\foamy-jumping-manatee.md`).
+
+- **Scope iniziale (superato, vedi sotto)**: si era deciso "solo generazione
+  XML, Paolo lo carica a mano sul portale ADM (U2S)" — **rivelatosi
+  impraticabile**: la modalità U2S di ADM è un form web per compilazione
+  manuale campo-per-campo (non accetta l'upload di un XML pronto) ed è
+  esplicitamente sconsigliata da ADM oltre 2 dichiarazioni. Con l'utente si è
+  quindi deciso di costruire l'**invio S2S vero e proprio** dentro l'app —
+  vedi sezione "Fase 4, invio S2S" più sotto per il piano completo. Solo la
+  **dichiarazione semestrale** per ora (annuale rimandata esplicitamente:
+  l'utente si aspetta possibili aggiornamenti documentali prima della
+  prossima scadenza annuale).
+- **Schema già pronto dalla Fase 1** (nessuna migration su `clienti`/`impianti`
+  necessaria): `impianti.codice_impianto_f24` = CodDitta del frontespizio
+  (per licenza/impianto, non per cliente), `impianti.codice_distributore_zona`
+  = Id del Quadro G (codice del distributore, es. E-Distribuzione — da
+  popolare per impianto), `contatori`+`letture`+`lib/calc/registro.ts`
+  (`letturaRegistro`, `mesePrecedente`) già bastano per calcolare
+  LettA/LettP/DiffLett/CostLett/kWh per contatore per mese.
+- **Validazione dati** (`lib/validation/dichiarazione-ee.schema.ts`): zod al
+  posto di un validatore XSD generico — le librerie XSD per Node hanno quasi
+  tutte binding nativi, rischiose su Vercel serverless (stesso tipo di
+  problema già avuto con `pdf-parse`, vedi bug #9 sotto).
+- **Generatore XML** (`lib/xml/dichiarazione-ee-semestrale.ts` + `.test.ts`):
+  costruisce l'`EnergiaElettricaSemestrale` XML (Dich, Periodo, Quadro A,
+  Quadro G con Tipo="B" vettoriamento) da template string, nessuna libreria
+  XML esterna. Testato con dati sintetici (mai reali, coerente col bug #7).
+- **Server actions** (`lib/actions/dichiarazioni.ts`):
+  `generaDichiarazioneSemestrale` valida la completezza dei dati (errore
+  esplicito con l'elenco dei campi/letture mancanti, stesso pattern di
+  `generaF24`), genera l'XML, lo archivia (tipo documento `dichiarazione_xml`,
+  nuovo valore enum), crea/aggiorna la riga in `dichiarazioni_ee_semestrali`
+  e ritorna l'XML in base64 per il download immediato.
+  `caricaEsitoDichiarazione` archivia il PDF/protocollo che ADM restituisce
+  dopo il caricamento manuale (riusa `caricaDocumento`, ora esteso per
+  accettare anche `text/plain` per il protocollo `.txt`) e segna la
+  dichiarazione come `inviata`.
+- **Nuova tabella** `dichiarazioni_ee_semestrali`
+  (`supabase/migrations/20260714130001_dichiarazioni_ee_semestrali.sql`,
+  **non ancora applicata in staging**): una riga per impianto+anno+semestre,
+  con riferimenti ai 3 documenti (XML generato, PDF e protocollo ricevuti).
+- **UI**: nuova sezione "Dichiarazione energia elettrica (semestrale)" nella
+  scheda impianto (`components/impianti/dichiarazione-section.tsx`):
+  selettore anno+semestre, bottone "Genera dichiarazione" (scarica l'XML o
+  mostra l'errore di completezza dati), storico con "Scarica XML" e upload
+  PDF/protocollo.
+- **Fuori scope per questo incremento** (vedi piano per i dettagli): Quadro
+  C/J/L/M/Q/S/N/T/Allegati (solo se un cliente vende a terzi), logica
+  multi-ambito (non serve per Quadro A/G, che non hanno raggruppamento per
+  ambito — entra in gioco solo con J/L/M/Q/S), collegamento automatico col
+  tabellone `/tracking`.
+- **Non ancora testato in staging**: build/lint/test passano (33 test
+  totali), ma la verifica end-to-end nel browser richiede login (nessuna
+  credenziale disponibile in sessione) — va provato dall'utente dopo aver
+  applicato la migration, popolato `codice_impianto_f24`/
+  `codice_distributore_zona` su un impianto di test e inserito letture per un
+  semestre completo.
+- **Dettagli da verificare con un caso reale, non bloccanti** (fallback
+  ragionevole già applicato): numerazione esatta di `NumMese` nel semestre
+  (assunto mese di calendario reale, 1-6 per il 1° semestre) — se Paolo ha un
+  XML di esempio reale da ADM, confrontarlo prima di dare per buona
+  l'assunzione.
+
+## Cosa è stato costruito — Fase 4, invio S2S: gestione certificato ADM (primo pezzo, da testare in staging)
+
+Dopo aver scoperto che la generazione XML da sola non basta (vedi sopra),
+piano completo per l'invio S2S concordato con l'utente — **solo il primo
+pezzo è stato costruito finora** (gestione del certificato), il client SOAP
+vero e proprio è ancora da fare.
+
+**Flusso concordato** (dettagli completi solo in conversazione, non ancora
+in un piano scritto — se serve rileggerlo, cerca nella cronologia la parte
+dopo "ho un dubbio atroce"):
+1. L'app genera l'XML (già fatto, Quadro A+G)
+2. Paolo lo firma **fuori dall'app**, con Aruba Sign (ha firma remota OTP) —
+   scelta esplicita dell'utente: così l'app non tocca mai il certificato di
+   firma di Paolo, e se cambia fornitore di firma non siamo impattati
+3. Paolo ricarica il file firmato nell'app
+4. L'app lo invia via SOAP all'endpoint ADM, autenticandosi con il
+   **certificato di autenticazione ADM** (diverso dalla firma — questo
+   autentica la connessione tecnica, non firma il contenuto) — **questo è il
+   pezzo costruito ora**
+5. L'app recupera lo IUT e poi l'esito (asincrono)
+6. **Scoperta importante**: a differenza di U2S, l'invio S2S **non restituisce
+   un PDF/protocollo pronti da ADM** — solo messaggi XML (OUTPUT + ESITO).
+   Il PDF/protocollo "belli" da dare al cliente finale li dovremo generare
+   **noi** (riuso di `pdf-lib`, stesso approccio di `f24-generator.ts`) — non
+   ancora costruito.
+
+**Endpoint verificati sugli XSD/WSDL ufficiali** (solo ambiente di test
+documentato finora — **l'endpoint di produzione non è ancora pubblicato da
+ADM**, normale per un sistema appena lanciato):
+- Invio: `https://platformtest.adm.gov.it/EEsemestraliM24ServiceWeb/services/EEsemestraliM24Service`, SOAP action `http://process.eesemestralim24.domest.sogei.it/wsdl/EEsemestraliM24Service`, `serviceId="invioEnergiaElettricaSemestrale"`
+- Recupero esito: `https://platformtest.adm.gov.it/InteropServiceWEB/services/InteropService` (`recuperaEsito(IUT)`)
+- Controllo stato: `https://platformtest.adm.gov.it/InteropRServiceWeb/services/InteropRService/selezionaStato/{iut}` (REST)
+
+**Costruito in questa sessione — gestione certificato di autenticazione ADM**:
+- Nuova tabella `certificati_adm` (`supabase/migrations/20260714140001_certificati_adm.sql`,
+  **non ancora applicata in staging**): un certificato per ambiente
+  (`test`/`produzione`), il contenuto (certificato + password opzionale, in
+  JSON) vive **cifrato in Supabase Vault**, mai in chiaro nel DB — stesso
+  meccanismo già usato per le credenziali E-distribuzione/GSE
+  (`set_cliente_credential`/`get_cliente_credential`), qui generalizzato con
+  `set_certificato_adm`/`get_certificato_adm`/`delete_certificato_adm`
+  (nuove RPC, security-definer, solo `service_role`).
+- **Un solo certificato attivo per ambiente**: ricaricare sostituisce quello
+  precedente — così si gestisce anche il rinnovo alla scadenza, come
+  richiesto esplicitamente dall'utente.
+- **UI**: nuova pagina `/impostazioni` (`components/impostazioni/certificato-adm-section.tsx`),
+  due riquadri (test/produzione) con stato attuale (nome file, data
+  caricamento, scadenza con badge — rosso se scaduto, giallo se entro 30
+  giorni) e form di caricamento/sostituzione. Il formato esatto del
+  certificato di Paolo (p12/pfx con password? altro?) non è ancora noto: il
+  contenuto viene conservato opaco (base64 + password libera) apposta, per
+  non dover ridisegnare lo schema quando arriva quello vero.
+- **Non ancora costruito**: il client SOAP che userà questo certificato
+  (upload XML firmato, invio test/reale, recupero esito, generazione
+  PDF/protocollo nostri) — prossimo pezzo, quando Paolo avrà ottenuto almeno
+  il certificato di test da ADM.
+
 ## Bug importanti risolti in questa sessione (da ricordare)
 
 1. **Closure non serializzabile Server→Client**: passare `onSubmit={(formData) => updateX(id, formData)}` da una pagina Server Component a un form Client Component causava un crash in produzione (build locale non lo intercetta, solo runtime). Fix: usare sempre `updateX.bind(null, id)`. **Se aggiungi nuove pagine di dettaglio, usa questo pattern fin da subito.**
@@ -293,31 +426,51 @@ Dopo il primo giro di test utente in staging, quattro richieste di verifica/modi
 L'utente ha completato in questa sessione tutti i test della Fase 2/3/onboarding
 già segnalati in precedenza. Quello che resta:
 
-1. **Applica la nuova migration `20260714120001_tracking.sql`** via SQL
-   Editor di Supabase (come le precedenti) — senza questa il tabellone
-   `/tracking` risponde con un errore.
-2. **Testa il tabellone `/tracking` in staging**: spunta dichiarazione per un
+1. **Applica le nuove migration** via SQL Editor di Supabase (come le
+   precedenti, in ordine): `20260714120001_tracking.sql`,
+   `20260714130001_dichiarazioni_ee_semestrali.sql` e
+   `20260714140001_certificati_adm.sql` — senza queste il tabellone
+   `/tracking`, la sezione "Dichiarazione energia elettrica" e la pagina
+   `/impostazioni` rispondono con un errore.
+2. **Chiedi a Paolo il certificato di autenticazione ADM (ambiente di
+   test)**: gli hai già mandato le istruzioni (accesso PUDM con SPID/CNS,
+   profili `dlr_enelettr` + `dlr_gestione_certificati_aut`, generazione da
+   Gestione Certificati) — appena arriva, caricalo da `/impostazioni` in
+   staging. Senza questo non si può ancora testare l'invio vero e proprio
+   (il client SOAP non è ancora stato costruito, sarà il prossimo pezzo).
+3. **Testa il tabellone `/tracking` in staging**: spunta dichiarazione per un
    impianto (1 o 2 semestri a seconda di "Diritto di licenza dovuto") e
    fattura per un cliente, ricarica la pagina e verifica che le spunte
    restino salvate. Cambia anno dal selettore e verifica che il filtro
    partner resti applicato (fix di questa sessione).
-3. **Ri-testa l'import PDF letture con una matricola diversa da quella a DB**
+4. **Ri-testa l'import PDF letture con una matricola diversa da quella a DB**
    (sostituzione contatore): ora l'import deve **bloccarsi** con un
    messaggio che chiede di creare il nuovo contatore a mano e cessare il
    vecchio, non più solo avvisare e importare comunque.
-4. **Configura `ANTHROPIC_API_KEY` su Vercel Project Settings** (già presente
+5. **Testa la generazione della dichiarazione XML in staging**: su un impianto
+   di test, compila `codice_impianto_f24` (formato AAA00000A) e
+   `codice_distributore_zona` (codice ditta/accisa del distributore, es.
+   E-Distribuzione — va reperito, ogni distributore lo pubblica sul proprio
+   sito), inserisci letture complete per un semestre su almeno un contatore
+   di produzione (e uno di immissione se vuoi testare anche il Quadro G),
+   poi vai sulla scheda impianto → "Genera dichiarazione". Se mancano dati,
+   vedrai un errore esplicito con l'elenco di cosa manca. Apri l'XML
+   scaricato e controlla a occhio che i valori tornino. **Non inviarlo
+   ancora da nessuna parte**: l'unico canale di invio (S2S) non è ancora
+   collegato all'app — il generatore XML per ora produce solo il file, la
+   parte "invio" è in costruzione (vedi sezione Fase 4/invio S2S sopra).
+6. **Configura `ANTHROPIC_API_KEY` su Vercel Project Settings** (già presente
    in `.env.local` ma non ancora replicata in produzione) — senza questa, il
    bottone "Importa da licenza PDF" mostra un errore chiaro invece di un
    crash, ma non è utilizzabile.
-5. Se un cliente ha più impianti con diritto di licenza di quanti ne entrano
+7. Se un cliente ha più impianti con diritto di licenza di quanti ne entrano
    nel modulo F24 (stimato 6 righe), dimmelo: il codice al momento tronca le
    righe in eccesso, va deciso se passare alla generazione multi-pagina.
-6. Quando tutto funziona: dammi conferma esplicita e ti guido nel merge
-   `staging` → `main` (primo deploy di produzione) — oppure procediamo con
-   il prossimo incremento (dichiarazione doganale Quadri A/G/L, che dovrà
-   tenere conto della periodicità semestrale/annuale — vedi memoria salvata)
-   a tua scelta.
-7. (Opzionale) elimina l'utente di test `claude-test@example.com` da
+8. Quando tutto funziona: dammi conferma esplicita e ti guido nel merge
+   `staging` → `main` (primo deploy di produzione) — oppure procediamo col
+   prossimo incremento della Fase 4 (client SOAP per l'invio vero, appena
+   Paolo ha il certificato di test) a tua scelta.
+9. (Opzionale) elimina l'utente di test `claude-test@example.com` da
    Supabase Auth Dashboard.
 
 ## File utili per orientarsi
@@ -329,8 +482,10 @@ già segnalati in precedenza. Quello che resta:
 - Motore di calcolo: `lib/calc/registro.ts` (+ `registro.test.ts`, `npm run test`)
 - Sezione Letture: `app/(app)/letture/`, `components/letture/`, `lib/actions/letture.ts`
 - Parser PDF: `lib/parsers/edistribuzione-pdf.ts` (+ `.test.ts`), upload: `lib/actions/documenti.ts` (+ `scaricaDocumento`, `components/shared/documenti-section.tsx`)
+- Dichiarazione XML EE semestrale: `lib/xml/dichiarazione-ee-semestrale.ts` (+ `.test.ts`), `lib/validation/dichiarazione-ee.schema.ts`, `lib/actions/dichiarazioni.ts`, UI: `components/impianti/dichiarazione-section.tsx`. Piano di implementazione salvato in `C:\Users\Emilio\.claude\plans\foamy-jumping-manatee.md`, ricerca documentazione ADM in memoria (`project_xml_dogane_ricerca.md`)
 - F24: `lib/pdf/f24-generator.ts` (+ `.test.ts`, coordinate in `f24-coordinates.ts`), `lib/actions/f24.ts`, email: `lib/email/client.ts`, UI: `components/clienti/f24-section.tsx`
 - Onboarding licenza: `lib/pdf/rasterizza-pagine.ts` (+ `.test.ts`), `lib/ai/estrai-licenza.ts`, `lib/actions/onboarding.ts`, `lib/validation/licenza.schema.ts`, UI: `components/clienti/onboarding-licenza-dialog.tsx`
 - Design system Jouletec: token in `app/globals.css`, font in `app/layout.tsx`, sidebar in `app/(app)/layout.tsx`, progetto Claude Design originale (per rivedere componenti/guideline non ancora applicati): `projectId 3b848f67-8e2f-48b0-bdbc-8d52f62d1fbb` via `DesignSync`
 - Tracking dichiarazioni/fatture: `app/(app)/tracking/`, `components/tracking/tracking-table.tsx`, `lib/actions/tracking.ts`, migration `supabase/migrations/20260714120001_tracking.sql`
+- Certificato autenticazione ADM (invio S2S): `app/(app)/impostazioni/`, `components/impostazioni/certificato-adm-section.tsx`, `lib/actions/certificati-adm.ts`, migration `supabase/migrations/20260714140001_certificati_adm.sql`
 - Setup locale: [`README.md`](./README.md)

@@ -5,6 +5,7 @@ import { ImpiantoForm } from "@/components/impianti/impianto-form"
 import { ContatoriList } from "@/components/impianti/contatori-list"
 import { ContatoriRelazioniManager } from "@/components/impianti/contatori-relazioni-manager"
 import { DocumentiSection } from "@/components/shared/documenti-section"
+import { DichiarazioneSection } from "@/components/impianti/dichiarazione-section"
 import { updateImpianto } from "@/lib/actions/impianti"
 import { Separator } from "@/components/ui/separator"
 
@@ -16,29 +17,42 @@ export default async function ImpiantoDetailPage({
   const { id } = await params
   const supabase = await createClient()
 
-  const [{ data: impianto }, { data: clienteOptions }, { data: contatori }, { data: documenti }] =
-    await Promise.all([
-      supabase
-        .from("impianti")
-        .select("*, cliente:cliente_id(id, ragione_sociale)")
-        .eq("id", id)
-        .single(),
-      supabase
-        .from("clienti")
-        .select("id, ragione_sociale")
-        .eq("attivo", true)
-        .order("ragione_sociale"),
-      supabase
-        .from("contatori")
-        .select("*")
-        .eq("impianto_id", id)
-        .order("data_attivazione", { ascending: false }),
-      supabase
-        .from("documenti")
-        .select("id, tipo, nome_file, created_at")
-        .eq("impianto_id", id)
-        .order("created_at", { ascending: false }),
-    ])
+  const [
+    { data: impianto },
+    { data: clienteOptions },
+    { data: contatori },
+    { data: documenti },
+    { data: dichiarazioni },
+  ] = await Promise.all([
+    supabase
+      .from("impianti")
+      .select("*, cliente:cliente_id(id, ragione_sociale)")
+      .eq("id", id)
+      .single(),
+    supabase
+      .from("clienti")
+      .select("id, ragione_sociale")
+      .eq("attivo", true)
+      .order("ragione_sociale"),
+    supabase
+      .from("contatori")
+      .select("*")
+      .eq("impianto_id", id)
+      .order("data_attivazione", { ascending: false }),
+    supabase
+      .from("documenti")
+      .select("id, tipo, nome_file, created_at")
+      .eq("impianto_id", id)
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("dichiarazioni_ee_semestrali")
+      .select(
+        "id, anno, periodo_riferimento, stato, documento_xml_id, documento_pdf_id, documento_protocollo_id, data_generazione, data_invio"
+      )
+      .eq("impianto_id", id)
+      .order("anno", { ascending: false })
+      .order("periodo_riferimento", { ascending: false }),
+  ])
 
   const contatoreIds = (contatori ?? []).map((c) => c.id)
   const { data: relazioni } =
@@ -104,6 +118,10 @@ export default async function ImpiantoDetailPage({
         contatori={contatori ?? []}
         relazioni={relazioni ?? []}
       />
+
+      <Separator />
+
+      <DichiarazioneSection impiantoId={id} dichiarazioni={dichiarazioni ?? []} />
 
       <Separator />
 

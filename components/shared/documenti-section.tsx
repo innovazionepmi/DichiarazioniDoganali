@@ -27,6 +27,7 @@ const TIPO_LABEL: Record<string, string> = {
   pdf_letture: "PDF letture",
   screenshot_letture: "Screenshot letture",
   dichiarazione: "Dichiarazione",
+  dichiarazione_xml: "Dichiarazione (XML)",
   protocollo: "Protocollo",
   ricevuta: "Ricevuta",
   verbale_sostituzione: "Verbale sostituzione",

@@ -6,7 +6,7 @@ export type CaricaDocumentoResult =
   | { error: string }
   | { documentoId: string; storagePath: string }
 
-const TIPI_CONSENTITI = ["application/pdf"]
+const TIPI_CONSENTITI = ["application/pdf", "text/plain"]
 const DIMENSIONE_MASSIMA_BYTES = 10 * 1024 * 1024 // 10MB
 
 // Carica un file su Storage (bucket privato 'documenti', RLS solo
@@ -14,13 +14,17 @@ const DIMENSIONE_MASSIMA_BYTES = 10 * 1024 * 1024 // 10MB
 // metadati corrispondente. Il documento viene archiviato subito al
 // caricamento, indipendentemente da cosa viene poi importato nelle letture
 // (traccia d'archivio sempre presente, brief §5.4).
+//
+// 'dichiarazione'/'protocollo': il PDF e il file txt che ADM restituisce dopo
+// il caricamento manuale di una dichiarazione sul portale — il protocollo è
+// sempre un .txt, per questo text/plain è ammesso oltre al PDF.
 export async function caricaDocumento(
   impiantoId: string,
-  tipo: "pdf_letture" | "screenshot_letture" | "altro",
+  tipo: "pdf_letture" | "screenshot_letture" | "dichiarazione" | "protocollo" | "altro",
   file: File
 ): Promise<CaricaDocumentoResult> {
   if (!TIPI_CONSENTITI.includes(file.type)) {
-    return { error: "Formato file non supportato: solo PDF." }
+    return { error: "Formato file non supportato: solo PDF o TXT." }
   }
   if (file.size > DIMENSIONE_MASSIMA_BYTES) {
     return { error: "File troppo grande (max 10MB)." }
@@ -32,7 +36,7 @@ export async function caricaDocumento(
   } = await supabase.auth.getUser()
   if (!user) return { error: "Non autenticato" }
 
-  const percorso = `impianti/${impiantoId}/letture/${Date.now()}-${file.name}`
+  const percorso = `impianti/${impiantoId}/${tipo}/${Date.now()}-${file.name}`
   const { error: uploadError } = await supabase.storage
     .from("documenti")
     .upload(percorso, file, { contentType: file.type })

@@ -11,6 +11,7 @@ const NAV_ITEMS = [
   { href: "/anagrafiche/partner", label: "Partner" },
   { href: "/letture", label: "Letture" },
   { href: "/tracking", label: "Tracking" },
+  { href: "/impostazioni", label: "Impostazioni" },
 ]
 
 export default async function AppLayout({
