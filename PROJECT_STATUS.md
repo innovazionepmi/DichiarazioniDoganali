@@ -466,11 +466,22 @@ reale — l'utente aveva chiesto esplicitamente di poterla testare così.
   parsing risposta successo/Fault/esito negativo, categorizzazione errori
   di connessione) e `lib/xml/dichiarazione-test-fittizia.test.ts` (3 test).
   52 test totali nel progetto, tutti verdi.
-- **Non ancora testato con una chiamata di rete reale**: build/lint/test
-  passano, ma nessuna verifica end-to-end contro il vero endpoint ADM in
-  questa sessione (non c'è modo di autenticarsi in staging da qui) — il
-  primo vero giro (genera XML → Paolo firma con Aruba → carica → invia →
-  osserva IUT/esito reali) spetta all'utente.
+- **Primo tentativo reale dell'utente: trovato e corretto un bug** — errore
+  "unable to get local issuer certificate" al primo invio. Causa: passavo
+  esplicitamente il CA root di ADM (`ca-test.pem`) per verificare il
+  certificato del server, ma **il server ADM usa un certificato Let's
+  Encrypt** (CA pubblica, già fidata di default) — passare un `ca` custom a
+  Node **sostituisce** l'elenco di default invece di aggiungersi,
+  escludendo così Let's Encrypt. Verificato con `openssl s_client` (Verify
+  return code: 0 usando il trust store di sistema) e corretto: rimosso `ca`
+  dalle opzioni dell'Agent in `lib/adm/soap-client.ts`, si usa il trust
+  store di default di Node. I CA root ADM in `lib/adm/certificati/` restano
+  nel repo ma **non sono usati dal codice** (servono verosimilmente per
+  altro, es. verificare i *nostri* certificati client — dettagli in memoria
+  `project_xml_dogane_ricerca.md`). Confermato anche che il server richiede
+  davvero il certificato client (comportamento atteso).
+- **Ancora da riprovare in staging** dopo questo fix: genera XML → Paolo
+  firma con Aruba → carica → invia → osserva IUT/esito reali.
 
 ## Bug importanti risolti in questa sessione (da ricordare)
 
@@ -493,17 +504,13 @@ reale — l'utente aveva chiesto esplicitamente di poterla testare così.
 Migration applicate, `/impostazioni` verificata in staging, certificato di
 test + CA root ADM già caricati e verificati. Quello che resta:
 
-1. **Testa la sandbox "Test invio ADM" in staging (priorità alta, primo
-   vero collaudo di rete di tutto questo lavoro)**: da `/impostazioni`,
-   genera l'XML di test, fallo firmare a Paolo con Aruba Sign (firma remota
-   OTP), carica il file firmato + il codice fiscale del sottoscrittore,
-   invia. Osserva cosa torna: IUT ed esito, oppure — se qualcosa non va —
-   verifica che l'errore mostrato sia effettivamente chiaro e categorizzato
-   (finestra persistente con "OK, capito", non un avviso che sparisce da
-   solo). Poi prova anche "Controlla stato" con il IUT ottenuto. Qualunque
-   cosa succeda (anche un errore), è informazione utile: è la primissima
-   chiamata di rete reale di questo progetto verso ADM, non l'abbiamo mai
-   potuta testare da qui.
+1. **Ripeti il test della sandbox "Test invio ADM" in staging** dopo aver
+   pushato/deployato il fix del bug "unable to get local issuer certificate"
+   (vedi sezione dedicata sopra) — non serve rifare l'XML/la firma se li hai
+   ancora, basta ricaricare lo stesso file firmato e reinviare. Se ricompare
+   lo stesso errore, il deploy potrebbe non essere ancora aggiornato;
+   qualunque altro esito (successo o un errore diverso) è nuova informazione
+   utile.
 2. **Testa il tabellone `/tracking` in staging**: spunta dichiarazione per un
    impianto (1 o 2 semestri a seconda di "Diritto di licenza dovuto") e
    fattura per un cliente, ricarica la pagina e verifica che le spunte

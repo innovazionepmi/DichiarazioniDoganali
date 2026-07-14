@@ -67,6 +67,7 @@ export function categorizzaErroreConnessione(err: unknown): { categoria: Categor
     "CERT_HAS_EXPIRED",
     "DEPTH_ZERO_SELF_SIGNED_CERT",
     "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+    "UNABLE_TO_GET_ISSUER_CERT",
     "ERR_TLS_CERT_ALTERNATIVE_NAME_INVALID",
     "SELF_SIGNED_CERT_IN_CHAIN",
   ]

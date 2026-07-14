@@ -1,7 +1,5 @@
 import "server-only"
 import https from "node:https"
-import { readFileSync } from "node:fs"
-import path from "node:path"
 import { createServiceRoleClient } from "@/lib/supabase/service-role"
 import {
   categorizzaErroreConnessione,
@@ -26,11 +24,23 @@ export type { CategoriaErroreAdm, EsitoControlloStato, EsitoInvioAdm } from "./s
 // è documentato (l'endpoint di produzione non è ancora pubblicato da ADM, e
 // per produzione manca comunque il certificato client, vedi
 // lib/actions/certificati-adm.ts).
+//
+// Verificato con openssl s_client (2026-07-14): il certificato TLS del
+// server ADM è emesso da Let's Encrypt, una CA pubblica già fidata di
+// default da Node — **non** serve passare un `ca` custom per verificarlo
+// (anzi, farlo rompe la verifica: `ca` sostituisce l'elenco di default
+// invece di aggiungersi). I file in lib/adm/certificati/ (CA root di ADM)
+// non servono a questo scopo: sono verosimilmente la CA che ha emesso il
+// *nostro* certificato client (confermato: l'issuer del .p12 caricato
+// combacia esattamente con ca-test.pem), tenuti nel repo per riferimento ma
+// non usati qui. Il server richiede comunque il certificato client
+// (verificato: TLS alert "certificate required" senza `pfx`), quindi quello
+// resta necessario.
 type Ambiente = "test" | "produzione"
 
 const CONFIGURAZIONE_AMBIENTE: Record<
   Ambiente,
-  { invio: string; controlloStato: string; soapAction: string; caPath: string } | null
+  { invio: string; controlloStato: string; soapAction: string } | null
 > = {
   test: {
     invio:
@@ -38,7 +48,6 @@ const CONFIGURAZIONE_AMBIENTE: Record<
     controlloStato:
       "https://platformtest.adm.gov.it/InteropRServiceWeb/services/InteropRService/selezionaStato",
     soapAction: "http://process.eesemestralim24.domest.sogei.it/wsdl/EEsemestraliM24Service",
-    caPath: "lib/adm/certificati/ca-test.pem",
   },
   produzione: null,
 }
@@ -71,10 +80,6 @@ async function caricaCertificatoPerAmbiente(
   } catch {
     return { errore: "Il certificato salvato è illeggibile: ricaricalo da Impostazioni." }
   }
-}
-
-function caricaCaRoot(caPath: string): Buffer {
-  return readFileSync(path.join(process.cwd(), caPath))
 }
 
 function eseguiPost(
@@ -149,7 +154,6 @@ export async function inviaDichiarazioneSoap({
       {
         pfx: certificato.pfx,
         passphrase: certificato.passphrase,
-        ca: caricaCaRoot(config.caPath),
       }
     )
     return interpretaRispostaInvio(risposta.body)
@@ -193,7 +197,6 @@ export async function controllaStatoSoap({
     const agent = new https.Agent({
       pfx: certificato.pfx,
       passphrase: certificato.passphrase,
-      ca: caricaCaRoot(config.caPath),
     })
     const req = https.request(
       {
