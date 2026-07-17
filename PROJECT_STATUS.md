@@ -1,16 +1,17 @@
 # Project status — Dichiarazione energia dogane
 
-Ultimo aggiornamento: Fase 4 (dichiarazione doganale) — costruito il **client
-SOAP di invio verso ADM** (ambiente di test) e una sandbox `/impostazioni` →
-"Test invio ADM". Primi due tentativi reali dell'utente hanno trovato due
-problemi distinti, entrambi diagnosticati e documentati (vedi sezione
-dedicata): un bug nostro nel client SOAP (**corretto**, CA custom errato) e
-un problema di **certificato sbagliato caricato** (Paolo ha il certificato
-di *firma* di test, non quello di *autenticazione* — servono entrambi ma
-sono due file distinti da ADM, **bloccato in attesa che Paolo scarichi
-quello giusto**). Codice non ancora committato. **Sessione chiusa in attesa
-della risposta di Paolo** — nessun lavoro attivo da fare finché non arriva
-il certificato giusto (vedi "Prossimi passi" per cosa fare quando arriva).
+Ultimo aggiornamento: Fase 4 (dichiarazione doganale) — trovata e completata
+la procedura per generare il **certificato di autenticazione ADM** corretto
+(era un problema di certificato sbagliato, non un bug nostro — vedi sezione
+dedicata). Certificato di **test generato, verificato e caricato**, ma
+l'invio dalla sandbox restituisce ancora un errore ADM (**codice 16,
+"Certificato autenticazione non valido"**) — persistente, non ancora capito
+se sia un ritardo di allineamento lato ADM (ipotesi principale, da
+riverificare) o qualcos'altro. Certificato di **produzione** anche generato
+e verificato, pronto in locale ma non ancora caricato su `/impostazioni`
+(non urgente: l'endpoint di produzione non è comunque ancora pubblicato da
+ADM). **Sessione chiusa in attesa di riprovare domani** — vedi "Prossimi
+passi" per il dettaglio.
 
 **⚠️ Urgenza scadenza**: verificato via fonte esterna (Energix) che la
 finestra di presentazione del I semestre 2026 è **1 luglio – 30 settembre
@@ -509,6 +510,86 @@ reale — l'utente aveva chiesto esplicitamente di poterla testare così.
   addestramento — nessuna modifica di codice necessaria per questo, solo un
   ricaricamento del file giusto da `/impostazioni` quando arriva.
 
+## Fase 4, invio S2S: procedura reale per il certificato di autenticazione (risolta) + errore ADM codice 16 (aperto)
+
+Il "certificato di autenticazione" (distinto dal "certificato di firma" —
+vedi sezione precedente) si ottiene sul portale ADM tramite un flusso **CSR
+(Certificate Signing Request)**, non un semplice download come per la firma
+di test. Trovato nel riquadro "OpenSSL Instructions" di "Certificate
+Management" (Area Riservata ADM → Interattivi → Gestione certificati →
+"Accedi al servizio in addestramento" per il test, "Accedi al servizio" per
+la produzione — stesso identico procedimento in entrambi gli ambienti,
+cambia solo il login):
+
+1. Genera chiave privata + CSR in locale (**la chiave privata non va mai
+   caricata da nessuna parte**):
+   `openssl req -newkey rsa:2048 -nodes -keyout key.der -out req.der -outform DER -subj "/C=IT/O=..../CN=...."`
+   (il subject che passiamo viene comunque sovrascritto da ADM con un
+   proprio template — non è rilevante cosa mettiamo lì, tranne forse il CN)
+2. Carica `req.der` su "Certificate Management", clic "Richiedi
+   Certificato", attendi, scarica il `.cer` risultante
+3. Converti in `.pem`: `openssl x509 -inform der -in xxxxx.cer -out xxxxx.pem`
+4. Combina con la chiave privata locale in un `.p12` protetto da password:
+   `openssl pkcs12 -export -inkey key.der -in xxxxx.pem -out certificato.p12 -passout pass:XXXX`
+5. Carica il `.p12` su `/impostazioni` con quella password
+
+**Fatto per entrambi gli ambienti**, file locali sul PC di Emilio (**non nel
+repo, non committati**):
+- Test: `C:\cert\certificato-autenticazione-test.p12` — **caricato su
+  `/impostazioni`**
+- Produzione: `C:\cert\produzione\certificato-autenticazione-produzione.p12`
+  — generato e verificato con OpenSSL (Key Usage/EKU corretti,
+  `TLS Web Client Authentication`), **non ancora caricato** su
+  `/impostazioni` (nessuna fretta: l'endpoint SOAP di produzione non è
+  ancora pubblicato da ADM)
+
+Entrambi verificati con `openssl x509 -noout -ext keyUsage,extendedKeyUsage`
+prima di caricarli: `Extended Key Usage: TLS Web Client Authentication` +
+`Key Usage: Digital Signature, Key Encipherment` — profilo corretto, a
+differenza del certificato di firma sbagliato usato inizialmente per errore
+(Key Usage: Non Repudiation, causa del problema precedente).
+
+**Nuovo problema, ancora aperto**: con il certificato di test corretto
+caricato, l'invio dalla sandbox non dà più errori di connessione/TLS (l'
+handshake mTLS funziona, il messaggio viene accolto da ADM con tanto di IUT
+assegnato), ma l'**esito è comunque negativo — codice ADM 16, "Certificato
+autenticazione non valido"** (confermato dal manuale ufficiale, tabella §7 —
+non è un codice che abbiamo inventato). Controllato anche via "Controlla
+stato" con lo stesso IUT: stesso errore, quindi **non risolto da solo nel
+giro di qualche ora**. Ipotesi principale (non confermata): allineamento
+notturno lato ADM tra il servizio "Gestione Certificati" (che mostra il
+certificato come "Scaricato", tutto regolare) e il servizio di validazione
+S2S — **da riverificare domani**. Se persiste, testo pronto per
+l'assistenza ADM (con IUT, numero di serie del certificato, dettagli) — non
+ancora inviato, chiesto all'utente se vuole procedere.
+
+**Escluso come causa** (verificato, non solo ipotizzato):
+- Non è un problema di come abbiamo costruito il `.p12` (Key Usage/EKU
+  corretti, handshake TLS riuscito)
+- Non è la stessa tabella codici di un altro file trovato dall'utente sul
+  sito ADM (`20210715_TabellaErrori.xlsx`) — quel file è di **un servizio
+  ADM completamente diverso** (dichiarazioni doganali con LRN, non accise
+  energia elettrica con IUT): stessi numeri di codice ma significati
+  totalmente diversi, coincidenza numerica ininfluente
+- Il campo "codice fiscale sottoscrittore" della sandbox (`<dichiarante>`
+  nella busta SOAP) non incide sulla logica di autenticazione — è un campo
+  di testo indipendente, usato da ADM per tracciare chi è il *dichiarante*
+  (il soggetto per cui si dichiara), distinto dal *richiedente* (titolare
+  del certificato, stabilito implicitamente dal certificato TLS). **Nota
+  per l'invio reale**: quel campo andrà valorizzato con CF/P.IVA del
+  **cliente finale**, non di Paolo — Paolo è sempre il "richiedente"
+  (titolare del certificato), non il "dichiarante".
+
+**Miglioria di codice fatta durante la diagnosi** (utile a prescindere
+dall'esito): il dialog di errore ora mostra sempre il **corpo XML grezzo
+completo** della risposta ADM (non solo il codice numerico) e lo **IUT
+anche su un invio respinto** (prima veniva scartato silenziosamente se
+l'esito non era positivo, bloccando "Controlla stato" anche quando ADM
+aveva comunque assegnato un IUT). `lib/adm/soap-envelope.ts`,
+`components/shared/errore-persistente-dialog.tsx`,
+`components/impostazioni/test-invio-adm-section.tsx`. Test aggiornati (17
+su `soap-envelope.test.ts`, 53 totali nel progetto).
+
 ## Verifica esterna (Energix) su scadenze e periodicità
 
 Paolo ha girato due articoli di Energix
@@ -567,14 +648,20 @@ quell'incremento (vedi piano `foamy-jumping-manatee.md`).
 Migration applicate, `/impostazioni` verificata in staging, certificato di
 test + CA root ADM già caricati e verificati. Quello che resta:
 
-1. **Chiedi a Paolo il "Certificato di autenticazione" di addestramento**
-   (da PUDM → Gestione Certificati) — quello che ha già caricato
-   (`AgenziaDoganeMonopoli.p12`) è il **certificato di firma**, non va bene
-   per questo scopo (vedi sezione dedicata sopra per il dettaglio tecnico).
-   Quando arriva, sostituiscilo da `/impostazioni` → ambiente di test, poi
-   ripeti l'invio dalla sandbox "Test invio ADM" (stesso XML/firma già
-   pronti, se li hai ancora). **Urgente**: la finestra del I semestre 2026
-   (1 luglio – 30 settembre) è già aperta.
+1. **Riprova domani l'invio dalla sandbox "Test invio ADM"** (stesso
+   certificato già caricato, stesso XML/firma se li hai ancora) — verifica
+   se l'errore codice 16 "Certificato autenticazione non valido" si è
+   risolto da solo (ipotesi: allineamento notturno lato ADM). In alternativa
+   puoi anche solo cliccare "Controlla stato" sull'ultimo IUT
+   (`20260717M24014060308`) senza rifare un invio nuovo. Se l'errore persiste
+   identico, manda il testo già pronto per l'assistenza ADM (vedi sezione
+   dedicata sopra) — a quel punto abbiamo esaurito la diagnosi possibile da
+   qui. **Urgente**: la finestra del I semestre 2026 (1 luglio – 30
+   settembre) è già aperta.
+1bis. **Carica anche il certificato di produzione** quando comodo (nessuna
+   fretta): `C:\cert\produzione\certificato-autenticazione-produzione.p12`,
+   password `Dichiarazioni2026!`, su `/impostazioni` → ambiente di
+   produzione.
 1bis. **Chiedi conferma a Paolo sulla regola di periodicità**: verifica se
    "resta annuale solo chi è in cessione totale o fa
    vettoriamento/distribuzione" (fonte Energix) corrisponde davvero a
