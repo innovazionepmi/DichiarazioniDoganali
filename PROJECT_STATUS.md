@@ -1,17 +1,26 @@
 # Project status — Dichiarazione energia dogane
 
-Ultimo aggiornamento: Fase 4 (dichiarazione doganale) — trovata e completata
-la procedura per generare il **certificato di autenticazione ADM** corretto
-(era un problema di certificato sbagliato, non un bug nostro — vedi sezione
-dedicata). Certificato di **test generato, verificato e caricato**, ma
-l'invio dalla sandbox restituisce ancora un errore ADM (**codice 16,
-"Certificato autenticazione non valido"**) — persistente, non ancora capito
-se sia un ritardo di allineamento lato ADM (ipotesi principale, da
-riverificare) o qualcos'altro. Certificato di **produzione** anche generato
-e verificato, pronto in locale ma non ancora caricato su `/impostazioni`
-(non urgente: l'endpoint di produzione non è comunque ancora pubblicato da
-ADM). **Sessione chiusa in attesa di riprovare domani** — vedi "Prossimi
-passi" per il dettaglio.
+Ultimo aggiornamento: Fase 4 (dichiarazione doganale) — 🎉 **la sandbox di
+invio S2S funziona end-to-end in ambiente di test**, ciclo completo incluso
+il controllo asincrono: certificato di autenticazione generato via CSR,
+invio SOAP accolto da ADM (**codice 20, "Acquisito a sistema"**), poi
+elaborazione sostanziale completata (**codice 198, "Elaborazione KO: con
+esito"** — rifiuto atteso, dati di test completamente fittizi non
+registrati realmente presso ADM). Percorso non banale (due errori superati
+in sequenza, cronologia completa nella sezione dedicata), ma la meccanica
+tecnica è validata al 100%: connessione, firma, invio, accoglienza,
+elaborazione asincrona. Certificato di **produzione** anche generato e
+verificato, pronto in locale ma non ancora caricato su `/impostazioni` (non
+urgente: l'endpoint di produzione non è ancora pubblicato da ADM).
+
+**Prossimo obiettivo (lunedì)**: capire come fare un test in addestramento
+che arrivi a un'**accettazione sostanziale vera** della pratica (non solo
+"acquisito a sistema", ma un esito finale positivo, es. codice 199/200) —
+serve probabilmente usare dati/identità realmente registrate presso ADM
+(es. un `CodDitta`/codice distributore reale di un cliente vero di Paolo,
+comunque a basso rischio perché siamo in ambiente di addestramento) invece
+dei dati completamente inventati usati finora, che falliscono inevitabilmente
+i controlli sostanziali. Da progettare insieme prima di procedere.
 
 **⚠️ Urgenza scadenza**: verificato via fonte esterna (Energix) che la
 finestra di presentazione del I semestre 2026 è **1 luglio – 30 settembre
@@ -510,7 +519,17 @@ reale — l'utente aveva chiesto esplicitamente di poterla testare così.
   addestramento — nessuna modifica di codice necessaria per questo, solo un
   ricaricamento del file giusto da `/impostazioni` quando arriva.
 
-## Fase 4, invio S2S: procedura reale per il certificato di autenticazione (risolta) + errore ADM codice 16 (aperto)
+## Fase 4, invio S2S: sandbox validata end-to-end in ambiente di test 🎉
+
+**Traguardo raggiunto**: la sandbox "Test invio ADM" (`/impostazioni`) ha
+completato con successo un invio reale verso l'ambiente di addestramento
+ADM — **codice 20, "Acquisito a sistema"**, IUT assegnato
+(`20260717M24014065490`). Tutta la catena tecnica funziona: certificato di
+autenticazione (mTLS) + firma XAdES-BES del contenuto + invio SOAP +
+interpretazione esito. Dettaglio di come ci si è arrivati (utile se serve
+ripetere per rinnovi/altri operatori) nelle sottosezioni sotto.
+
+### Procedura per il certificato di autenticazione (CSR)
 
 Il "certificato di autenticazione" (distinto dal "certificato di firma" —
 vedi sezione precedente) si ottiene sul portale ADM tramite un flusso **CSR
@@ -549,36 +568,47 @@ prima di caricarli: `Extended Key Usage: TLS Web Client Authentication` +
 differenza del certificato di firma sbagliato usato inizialmente per errore
 (Key Usage: Non Repudiation, causa del problema precedente).
 
-**Nuovo problema, ancora aperto**: con il certificato di test corretto
-caricato, l'invio dalla sandbox non dà più errori di connessione/TLS (l'
-handshake mTLS funziona, il messaggio viene accolto da ADM con tanto di IUT
-assegnato), ma l'**esito è comunque negativo — codice ADM 16, "Certificato
-autenticazione non valido"** (confermato dal manuale ufficiale, tabella §7 —
-non è un codice che abbiamo inventato). Controllato anche via "Controlla
-stato" con lo stesso IUT: stesso errore, quindi **non risolto da solo nel
-giro di qualche ora**. Ipotesi principale (non confermata): allineamento
-notturno lato ADM tra il servizio "Gestione Certificati" (che mostra il
-certificato come "Scaricato", tutto regolare) e il servizio di validazione
-S2S — **da riverificare domani**. Se persiste, testo pronto per
-l'assistenza ADM (con IUT, numero di serie del certificato, dettagli) — non
-ancora inviato, chiesto all'utente se vuole procedere.
+### Cronologia degli errori superati (utile se ricompaiono su altri operatori/rinnovi)
 
-**Escluso come causa** (verificato, non solo ipotizzato):
-- Non è un problema di come abbiamo costruito il `.p12` (Key Usage/EKU
-  corretti, handshake TLS riuscito)
-- Non è la stessa tabella codici di un altro file trovato dall'utente sul
-  sito ADM (`20210715_TabellaErrori.xlsx`) — quel file è di **un servizio
-  ADM completamente diverso** (dichiarazioni doganali con LRN, non accise
-  energia elettrica con IUT): stessi numeri di codice ma significati
-  totalmente diversi, coincidenza numerica ininfluente
-- Il campo "codice fiscale sottoscrittore" della sandbox (`<dichiarante>`
-  nella busta SOAP) non incide sulla logica di autenticazione — è un campo
-  di testo indipendente, usato da ADM per tracciare chi è il *dichiarante*
-  (il soggetto per cui si dichiara), distinto dal *richiedente* (titolare
-  del certificato, stabilito implicitamente dal certificato TLS). **Nota
-  per l'invio reale**: quel campo andrà valorizzato con CF/P.IVA del
-  **cliente finale**, non di Paolo — Paolo è sempre il "richiedente"
-  (titolare del certificato), non il "dichiarante".
+1. **Codice ADM 16, "Certificato autenticazione non valido"**: comparso
+   subito dopo il primo caricamento del certificato di test appena generato
+   (handshake mTLS riuscito, IUT assegnato, ma esito negativo). **Si è
+   risolto da solo entro qualche ora** (stesso giorno, non serviva aspettare
+   fino al giorno dopo) — confermata l'ipotesi di un allineamento
+   interno lato ADM tra il servizio "Gestione Certificati" e quello di
+   validazione S2S. Nessuna azione nostra necessaria, solo attesa.
+   **Escluso come causa** (verificato, non solo ipotizzato): non era un
+   problema di come abbiamo costruito il `.p12` (Key Usage/EKU corretti,
+   handshake TLS riuscito), né la stessa tabella codici di un altro file
+   trovato dall'utente sul sito ADM (`20210715_TabellaErrori.xlsx` — quel
+   file è di un servizio ADM completamente diverso, dichiarazioni doganali
+   con LRN, non accise energia elettrica con IUT: stessi numeri di codice,
+   significati totalmente diversi, coincidenza ininfluente).
+2. **Codice ADM 18, "Firmatario non autorizzato"**: comparso subito dopo,
+   una volta risolto il 16. Causa: l'XML di test era stato firmato con la
+   firma Aruba **personale di Emilio**, non con il certificato di firma
+   pensato per questa fase. Il manuale/portale ADM è esplicito: **in fase di
+   addestramento va usato il "Certificato di Firma UNICO ADM"** condiviso
+   (lo stesso `AgenziaDoganeMonopoli.p12` scambiato per errore come
+   certificato di autenticazione all'inizio di questa fase — in realtà era
+   corretto, andava solo usato per firmare, non per la connessione TLS).
+   Solo più avanti (verso la produzione) serve una firma qualificata reale
+   (Aruba). **Non serviva quindi far firmare a Paolo con Aruba per questo
+   test** — serviva firmare con il certificato condiviso di addestramento.
+3. **Fix pratico**: non avendo un client di firma XAdES-BES che accetti un
+   `.p12` arbitrario (Aruba firma solo con la propria identità remota),
+   l'utente ha usato **Namirial** (gratuito) per firmare l'XML con
+   `AgenziaDoganeMonopoli.p12` — **funzionato al primo colpo**, invio
+   accolto con codice 20.
+
+**Nota per l'invio reale** (quando si collegherà `dichiarazioni_ee_semestrali`
+al client SOAP): il campo `<dichiarante>` della busta SOAP (sandbox: "codice
+fiscale sottoscrittore") è distinto dal *richiedente* (titolare del
+certificato di autenticazione, stabilito implicitamente dalla connessione
+TLS — sempre Paolo). Il *dichiarante* andrà valorizzato con CF/P.IVA del
+**cliente finale**, non di Paolo. E soprattutto: **per l'invio reale la
+firma dovrà essere quella qualificata vera di Paolo su Aruba** (non più il
+certificato condiviso di addestramento, valido solo in quell'ambiente).
 
 **Miglioria di codice fatta durante la diagnosi** (utile a prescindere
 dall'esito): il dialog di errore ora mostra sempre il **corpo XML grezzo
@@ -648,16 +678,15 @@ quell'incremento (vedi piano `foamy-jumping-manatee.md`).
 Migration applicate, `/impostazioni` verificata in staging, certificato di
 test + CA root ADM già caricati e verificati. Quello che resta:
 
-1. **Riprova domani l'invio dalla sandbox "Test invio ADM"** (stesso
-   certificato già caricato, stesso XML/firma se li hai ancora) — verifica
-   se l'errore codice 16 "Certificato autenticazione non valido" si è
-   risolto da solo (ipotesi: allineamento notturno lato ADM). In alternativa
-   puoi anche solo cliccare "Controlla stato" sull'ultimo IUT
-   (`20260717M24014060308`) senza rifare un invio nuovo. Se l'errore persiste
-   identico, manda il testo già pronto per l'assistenza ADM (vedi sezione
-   dedicata sopra) — a quel punto abbiamo esaurito la diagnosi possibile da
-   qui. **Urgente**: la finestra del I semestre 2026 (1 luglio – 30
-   settembre) è già aperta.
+1. ~~Riprova l'invio dalla sandbox~~ **Fatto — sandbox validata, esito
+   positivo (codice 20, IUT `20260717M24014065490`)**. Vedi cronologia
+   completa nella sezione "Fase 4, invio S2S: sandbox validata end-to-end".
+   **Prossimo passo naturale ora**: collegare questo client SOAP validato
+   alla dichiarazione reale (`dichiarazioni_ee_semestrali`), finora tenuta
+   deliberatamente separata — vedi anche il requisito del riepilogo
+   pre-invio (sezione dedicata) da rispettare in quell'incremento.
+   **Urgente**: la finestra del I semestre 2026 (1 luglio – 30 settembre) è
+   già aperta.
 1bis. **Carica anche il certificato di produzione** quando comodo (nessuna
    fretta): `C:\cert\produzione\certificato-autenticazione-produzione.p12`,
    password `Dichiarazioni2026!`, su `/impostazioni` → ambiente di
