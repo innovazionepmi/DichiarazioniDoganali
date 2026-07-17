@@ -61,6 +61,10 @@ export function TestInvioAdmSection() {
   const [risultatoStato, setRisultatoStato] = useState<{ codice: string; descrizione: string } | null>(
     null
   )
+  // Separato da risultatoInvio: ADM può assegnare uno IUT anche a un invio
+  // respinto (es. codice 16, certificato non valido) — l'operatore deve
+  // poter controllare lo stato di quello IUT anche se l'invio non è "ok".
+  const [iutDisponibile, setIutDisponibile] = useState<string | null>(null)
 
   function handleGenera() {
     startTransition(async () => {
@@ -94,18 +98,22 @@ export function TestInvioAdmSection() {
       }
       if (!result.ok) {
         setErrore(result)
+        setRisultatoInvio(null)
+        setRisultatoStato(null)
+        setIutDisponibile(result.iut ?? null)
         return
       }
       setRisultatoInvio(result)
       setRisultatoStato(null)
+      setIutDisponibile(result.iut)
       toast.success("Inviato ad ADM (ambiente di test)")
     })
   }
 
   function handleControllaStato() {
-    if (!risultatoInvio) return
+    if (!iutDisponibile) return
     startTransition(async () => {
-      const result = await controllaStatoTestAdm(risultatoInvio.iut)
+      const result = await controllaStatoTestAdm(iutDisponibile)
       if ("error" in result) {
         toast.error(result.error)
         return
@@ -193,18 +201,26 @@ export function TestInvioAdmSection() {
             <CardDescription>Esito dell&apos;invio e stato ADM.</CardDescription>
           </CardHeader>
           <CardContent className="grid gap-2 text-sm">
-            {!risultatoInvio ? (
+            {!iutDisponibile ? (
               <p className="text-muted-foreground">Nessun invio ancora effettuato.</p>
             ) : (
               <>
                 <p>
-                  IUT: <span className="font-medium">{risultatoInvio.iut}</span>
+                  IUT: <span className="font-medium">{iutDisponibile}</span>
                 </p>
-                <p className="flex items-center gap-2">
-                  Esito accoglienza: <Badge variant="success">{risultatoInvio.esitoCodice}</Badge>
-                </p>
-                {risultatoInvio.esitoMessaggi.length > 0 && (
-                  <p className="text-muted-foreground">{risultatoInvio.esitoMessaggi.join(" — ")}</p>
+                {risultatoInvio ? (
+                  <>
+                    <p className="flex items-center gap-2">
+                      Esito accoglienza: <Badge variant="success">{risultatoInvio.esitoCodice}</Badge>
+                    </p>
+                    {risultatoInvio.esitoMessaggi.length > 0 && (
+                      <p className="text-muted-foreground">{risultatoInvio.esitoMessaggi.join(" — ")}</p>
+                    )}
+                  </>
+                ) : (
+                  <p className="text-muted-foreground">
+                    Invio respinto (vedi errore) — IUT assegnato comunque da ADM.
+                  </p>
                 )}
                 {risultatoStato && (
                   <p className="flex items-center gap-2">
@@ -215,7 +231,7 @@ export function TestInvioAdmSection() {
               </>
             )}
           </CardContent>
-          {risultatoInvio && (
+          {iutDisponibile && (
             <CardFooter>
               <Button
                 size="sm"

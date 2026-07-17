@@ -16,6 +16,7 @@ export interface ErroreOperazione {
   categoria: CategoriaErrore
   messaggio: string
   dettaglioTecnico?: string
+  iut?: string
 }
 
 const CATEGORIA_INFO: Record<CategoriaErrore, { titolo: string; suggerimento?: string }> = {
@@ -69,6 +70,13 @@ export function ErrorePersistenteDialog({
         </DialogHeader>
 
         <p className="text-sm">{errore.messaggio}</p>
+
+        {errore.iut && (
+          <p className="text-sm text-muted-foreground">
+            IUT assegnato comunque: <span className="font-medium">{errore.iut}</span> — il messaggio
+            è stato registrato da ADM anche se respinto, puoi verificarne lo stato.
+          </p>
+        )}
 
         {info.suggerimento && (
           <p className="text-sm text-muted-foreground">{info.suggerimento}</p>

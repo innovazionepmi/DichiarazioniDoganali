@@ -58,6 +58,19 @@ describe("interpretaRispostaInvio", () => {
     }
   })
 
+  it("include lo IUT anche in un esito negativo, quando presente", () => {
+    const xml = `<Envelope><Body><Output>
+      <IUT>20260717M24014060308</IUT>
+      <esito><codice>16</codice><messaggio>Certificato autenticazione non valido</messaggio></esito>
+    </Output></Body></Envelope>`
+    const risultato = interpretaRispostaInvio(xml)
+    expect(risultato.ok).toBe(false)
+    if (!risultato.ok) {
+      expect(risultato.categoria).toBe("certificato")
+      expect(risultato.iut).toBe("20260717M24014060308")
+    }
+  })
+
   it("gestisce più messaggi di esito (array)", () => {
     const xml = `<Envelope><Body><Output>
       <IUT>X</IUT>

@@ -10,7 +10,7 @@ export type CategoriaErroreAdm = "certificato" | "xml_malformato" | "rete" | "es
 
 export type EsitoInvioAdm =
   | { ok: true; iut: string; esitoCodice: string; esitoMessaggi: string[]; dataRegistrazione: string | null }
-  | { ok: false; categoria: CategoriaErroreAdm; messaggio: string; dettaglioTecnico?: string }
+  | { ok: false; categoria: CategoriaErroreAdm; messaggio: string; dettaglioTecnico?: string; iut?: string }
 
 export type EsitoControlloStato =
   | { ok: true; codice: string; descrizione: string }
@@ -163,6 +163,7 @@ export function interpretaRispostaInvio(httpBody: string): EsitoInvioAdm {
   const categoria = categorizzaCodice(esitoCodice)
 
   if (categoria) {
+    const iutRespinto = output.IUT ? String(output.IUT) : undefined
     return {
       ok: false,
       categoria,
@@ -172,6 +173,10 @@ export function interpretaRispostaInvio(httpBody: string): EsitoInvioAdm {
       // scoprire se la risposta contiene altri dettagli utili non ancora
       // mappati dal parser.
       dettaglioTecnico: `Codice ADM: ${esitoCodice}\n\n${httpBody.slice(0, 2000)}`,
+      // ADM può assegnare uno IUT anche a un esito respinto (es. codice 16):
+      // il messaggio è comunque stato accolto/registrato, solo bocciato in
+      // un controllo successivo. Utile per il controllo stato manuale.
+      ...(iutRespinto ? { iut: iutRespinto } : {}),
     }
   }
 
