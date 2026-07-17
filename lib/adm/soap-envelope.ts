@@ -167,7 +167,11 @@ export function interpretaRispostaInvio(httpBody: string): EsitoInvioAdm {
       ok: false,
       categoria,
       messaggio: esitoMessaggi.length > 0 ? esitoMessaggi.join(" — ") : `Codice esito ADM: ${esitoCodice}`,
-      dettaglioTecnico: `Codice ADM: ${esitoCodice}`,
+      // Include sempre il corpo grezzo, non solo il codice: quando ADM non
+      // valorizza <esito><messaggio> (es. codice 16) è l'unico modo per
+      // scoprire se la risposta contiene altri dettagli utili non ancora
+      // mappati dal parser.
+      dettaglioTecnico: `Codice ADM: ${esitoCodice}\n\n${httpBody.slice(0, 2000)}`,
     }
   }
 
