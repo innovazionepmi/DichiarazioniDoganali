@@ -124,7 +124,7 @@ export function ImportaPdfDialog({
 
     startTransition(async () => {
       const result = await upsertLetture(impiantoId, righeSelezionate, {
-        origine: "pdf_stampa",
+        origine: analisi.origine,
         documentoSorgenteId: analisi.documentoId,
       })
       if (result?.error) {
@@ -156,27 +156,32 @@ export function ImportaPdfDialog({
         size="sm"
         onClick={() => setOpen(true)}
       >
-        Importa da PDF E-distribuzione
+        Importa da PDF o screenshot
       </Button>
       <Dialog open={open} onOpenChange={handleOpenChange}>
         <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Importa letture da PDF E-distribuzione</DialogTitle>
+            <DialogTitle>Importa letture da PDF o screenshot</DialogTitle>
           </DialogHeader>
 
           {!analisi ? (
             <form action={handleAnalizza} className="grid gap-4">
               <div className="grid gap-2">
                 <Label htmlFor="file">
-                  File PDF (stampa pagina E-distribuzione)
+                  File PDF (stampa pagina E-distribuzione) o screenshot (PNG/JPEG)
                 </Label>
                 <Input
                   id="file"
                   name="file"
                   type="file"
-                  accept="application/pdf"
+                  accept="application/pdf,image/png,image/jpeg,image/webp"
                   required
                 />
+                <p className="text-xs text-muted-foreground">
+                  Il PDF viene letto in modo esatto; uno screenshot viene letto con
+                  un&apos;intelligenza artificiale — controlla sempre i valori prima di
+                  confermare.
+                </p>
               </div>
               <Button type="submit" disabled={pending} className="w-fit">
                 {pending ? "Analisi in corso…" : "Analizza"}

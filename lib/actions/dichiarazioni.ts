@@ -18,6 +18,7 @@ import {
   type EsitoInvioAdm,
   type EsitoControlloStato,
 } from "@/lib/adm/soap-client"
+import { generaRicevutaInvioPdf } from "@/lib/pdf/ricevuta-invio-generator"
 
 export type ActionResult = { error?: string } | void
 
@@ -449,12 +450,14 @@ export async function controllaStatoDichiarazioneReale(
 
 export type ScaricaRicevutaResult = { error: string } | { base64: string; nomeFile: string }
 
-// Genera (o riscarica, se già generata) una ricevuta testuale simile a
-// quella che ADM restituiva con l'invio manuale U2S — S2S non la fornisce
-// nativamente (solo messaggi XML OUTPUT/ESITO), quindi la costruiamo noi.
-// "Numero di registrazione" non è disponibile (richiederebbe
-// InteropService.recuperaEsito, non ancora implementato — vedi
-// PROJECT_STATUS.md): la ricevuta riporta IUT + esito, non quel numero.
+// Genera (o riscarica, se già generata) una ricevuta PDF con frontespizio +
+// Quadro A/G + IUT/esito — S2S non fornisce nativamente un PDF pronto come
+// l'invio manuale U2S (solo messaggi XML OUTPUT/ESITO), quindi lo
+// costruiamo noi (lib/pdf/ricevuta-invio-generator.ts), ispirandoci a un
+// vero PDF di dichiarazione U2S storico. "Numero di registrazione" non è
+// disponibile (richiederebbe InteropService.recuperaEsito — costruito e
+// testato, ma bloccato da un'incongruenza lato ADM, vedi PROJECT_STATUS.md):
+// la ricevuta riporta IUT + esito, non quel numero.
 export async function scaricaRicevutaDichiarazione(
   dichiarazioneId: string
 ): Promise<ScaricaRicevutaResult> {
@@ -467,7 +470,7 @@ export async function scaricaRicevutaDichiarazione(
   const { data: riga, error } = await supabase
     .from("dichiarazioni_ee_semestrali")
     .select(
-      "impianto_id, anno, periodo_riferimento, iut, esito_codice, esito_descrizione, esito_aggiornato_at, data_registrazione_adm, documento_protocollo_id"
+      "impianto_id, documento_xml_id, iut, esito_codice, esito_descrizione, esito_aggiornato_at, data_registrazione_adm, documento_protocollo_id"
     )
     .eq("id", dichiarazioneId)
     .single()
@@ -482,43 +485,62 @@ export async function scaricaRicevutaDichiarazione(
     return { base64: esistente.base64, nomeFile: esistente.nomeFile }
   }
 
+  if (!riga.documento_xml_id) return { error: "XML non disponibile per questa dichiarazione." }
+  const xmlResult = await scaricaDocumento(riga.documento_xml_id)
+  if ("error" in xmlResult) return xmlResult
+
+  let dati: DichiarazioneEeSemestraleInput
+  try {
+    dati = parseDichiarazioneEeSemestraleXml(Buffer.from(xmlResult.base64, "base64").toString("utf-8"))
+  } catch {
+    return { error: "L'XML archiviato non è leggibile." }
+  }
+
   const { data: impianto } = await supabase
     .from("impianti")
-    .select("codice_impianto_f24")
+    .select("cliente_id, indirizzo_via, indirizzo_citta")
     .eq("id", riga.impianto_id)
     .single()
+  const { data: cliente } = impianto
+    ? await supabase.from("clienti").select("ragione_sociale").eq("id", impianto.cliente_id).single()
+    : { data: null }
 
   // Preferiamo la data ufficiale riportata da ADM stessa (dataRegistrazione
   // dell'Output) alla nostra ora locale — se non disponibile, fallback su
   // quando abbiamo registrato l'ultimo esito noto.
-  const rigaRegistrazione = riga.data_registrazione_adm
+  const dataRegistrazione = riga.data_registrazione_adm
     ? riga.data_registrazione_adm
     : riga.esito_aggiornato_at
       ? `${new Date(riga.esito_aggiornato_at).toLocaleDateString("it-IT")} ${new Date(riga.esito_aggiornato_at).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })}`
       : new Date().toLocaleDateString("it-IT")
-  const testo =
-    `IUT ${riga.iut}\n` +
-    `RICEVUTO ${rigaRegistrazione}\n` +
-    `${impianto?.codice_impianto_f24 ?? ""} ${riga.anno} - ${riga.periodo_riferimento}° semestre: ` +
-    `${riga.esito_descrizione ?? "Esito non ancora disponibile"}` +
-    `${riga.esito_codice ? ` (codice ${riga.esito_codice})` : ""}\n`
 
-  const nomeFile = `Ricevuta_${riga.iut}.txt`
-  const percorso = `impianti/${riga.impianto_id}/protocollo/${Date.now()}-${nomeFile}`
+  const pdfBytes = await generaRicevutaInvioPdf({
+    iut: riga.iut,
+    esitoCodice: riga.esito_codice,
+    esitoDescrizione: riga.esito_descrizione,
+    dataRegistrazione,
+    clienteRagioneSociale: cliente?.ragione_sociale ?? "",
+    impiantoComune: impianto?.indirizzo_citta ?? "",
+    impiantoIndirizzo: impianto?.indirizzo_via ?? "",
+    dati,
+  })
+
+  const nomeFile = `Ricevuta_${riga.iut}.pdf`
+  const percorso = `impianti/${riga.impianto_id}/ricevuta/${Date.now()}-${nomeFile}`
 
   const { error: uploadError } = await supabase.storage
     .from("documenti")
-    .upload(percorso, new Blob([testo], { type: "text/plain" }), { contentType: "text/plain" })
+    .upload(percorso, Buffer.from(pdfBytes), { contentType: "application/pdf" })
   if (uploadError) return { error: uploadError.message }
 
   const { data: documento, error: documentoError } = await supabase
     .from("documenti")
     .insert({
-      tipo: "protocollo",
+      tipo: "ricevuta",
       storage_path: percorso,
       nome_file: nomeFile,
-      mime_type: "text/plain",
-      dimensione_bytes: new Blob([testo]).size,
+      mime_type: "application/pdf",
+      dimensione_bytes: pdfBytes.byteLength,
       impianto_id: riga.impianto_id,
       created_by: user.id,
     })
@@ -533,5 +555,5 @@ export async function scaricaRicevutaDichiarazione(
 
   revalidatePath(`/anagrafiche/impianti/${riga.impianto_id}`)
 
-  return { base64: Buffer.from(testo, "utf-8").toString("base64"), nomeFile }
+  return { base64: Buffer.from(pdfBytes).toString("base64"), nomeFile }
 }

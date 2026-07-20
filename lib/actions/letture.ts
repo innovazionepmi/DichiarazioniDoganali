@@ -8,8 +8,11 @@ import { PDFParse } from "pdf-parse"
 import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
 import { caricaDocumento } from "@/lib/actions/documenti"
-import { parseEdistribuzionePdf } from "@/lib/parsers/edistribuzione-pdf"
+import { parseEdistribuzionePdf, type RisultatoParsingEdistribuzione } from "@/lib/parsers/edistribuzione-pdf"
+import { estraiLettureDaScreenshot } from "@/lib/ai/estrai-letture-screenshot"
 import { upsertLettureSchema, type LetturaCellaInput } from "@/lib/validation/lettura.schema"
+
+const TIPI_IMMAGINE = ["image/png", "image/jpeg", "image/webp"] as const
 
 export type ActionResult = { error?: string } | void
 
@@ -74,6 +77,7 @@ export type AnalisiPdfResult =
   | { error: string }
   | {
       documentoId: string
+      origine: "pdf_stampa" | "screenshot"
       pod: string
       matricolaPdf: string | null
       contatoreId: string
@@ -85,9 +89,17 @@ export type AnalisiPdfResult =
 // Estrae e confronta col DB, ma NON scrive letture: Paolo deve confermare
 // riga per riga in UI prima che qualsiasi valore venga scritto (evita che
 // un import automatico sovrascriva silenziosamente una correzione manuale —
-// vedi modificataManualmente su ogni riga del risultato). Il documento PDF
-// viene comunque archiviato subito su Storage (caricaDocumento), a
-// prescindere da cosa Paolo poi conferma di importare.
+// vedi modificataManualmente su ogni riga del risultato). Il documento
+// (PDF o screenshot) viene comunque archiviato subito su Storage
+// (caricaDocumento), a prescindere da cosa Paolo poi conferma di importare.
+//
+// Due percorsi di estrazione, stessa logica di confronto/diff a valle:
+// - PDF "stampa pagina" E-distribuzione → parsing regex deterministico
+//   (parseEdistribuzionePdf), nessuna chiamata esterna.
+// - Screenshot/immagine → vision AI (estraiLettureDaScreenshot), richiesta
+//   esplicita dell'utente per i casi in cui stampare il PDF non è comodo
+//   (es. foto da telefono). Meno affidabile del parsing regex: i valori
+//   restano comunque soggetti alla stessa revisione riga per riga in UI.
 export async function analizzaPdfLetture(
   impiantoId: string,
   formData: FormData
@@ -97,22 +109,49 @@ export async function analizzaPdfLetture(
     return { error: "Nessun file selezionato" }
   }
 
-  const caricamento = await caricaDocumento(impiantoId, "pdf_letture", file)
+  const isImmagine = (TIPI_IMMAGINE as readonly string[]).includes(file.type)
+  const tipoDocumento = isImmagine ? "screenshot_letture" : "pdf_letture"
+
+  const caricamento = await caricaDocumento(impiantoId, tipoDocumento, file)
   if ("error" in caricamento) return { error: caricamento.error }
 
-  let testo: string
-  try {
+  let parsed: RisultatoParsingEdistribuzione
+  if (isImmagine) {
     const buffer = Buffer.from(await file.arrayBuffer())
-    const parser = new PDFParse({ data: buffer })
-    const risultatoTesto = await parser.getText()
-    testo = risultatoTesto.text
-  } catch (e) {
-    return {
-      error: `Impossibile leggere il PDF: ${e instanceof Error ? e.message : String(e)}`,
+    const risultato = await estraiLettureDaScreenshot(
+      buffer.toString("base64"),
+      file.type as "image/png" | "image/jpeg" | "image/webp"
+    )
+    if ("error" in risultato) return { error: risultato.error }
+    parsed = {
+      pod: risultato.data.pod,
+      matricola: risultato.data.matricola,
+      costanteK: risultato.data.costanteK,
+      indirizzoFornitura: null,
+      letture: risultato.data.letture
+        .filter((l) => l.f1 !== null && l.f2 !== null && l.f3 !== null)
+        .map((l) => ({ mese: l.mese, anno: l.anno, f1: l.f1!, f2: l.f2!, f3: l.f3! })),
+      avvisi:
+        risultato.data.letture.length !==
+        risultato.data.letture.filter((l) => l.f1 !== null && l.f2 !== null && l.f3 !== null).length
+          ? ["Alcuni mesi nello screenshot avevano valori F1/F2/F3 incompleti e sono stati scartati: verificare manualmente."]
+          : [],
     }
+  } else {
+    let testo: string
+    try {
+      const buffer = Buffer.from(await file.arrayBuffer())
+      const parser = new PDFParse({ data: buffer })
+      const risultatoTesto = await parser.getText()
+      testo = risultatoTesto.text
+    } catch (e) {
+      return {
+        error: `Impossibile leggere il PDF: ${e instanceof Error ? e.message : String(e)}`,
+      }
+    }
+    parsed = parseEdistribuzionePdf(testo)
   }
 
-  const parsed = parseEdistribuzionePdf(testo)
   if (!parsed.pod) {
     return { error: "Codice POD non trovato nel PDF: impossibile associare un contatore." }
   }
@@ -206,6 +245,7 @@ export async function analizzaPdfLetture(
 
   return {
     documentoId: caricamento.documentoId,
+    origine: isImmagine ? "screenshot" : "pdf_stampa",
     pod: parsed.pod,
     matricolaPdf: parsed.matricola,
     contatoreId: contatore.id,

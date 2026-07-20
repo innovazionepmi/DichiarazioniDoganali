@@ -16,6 +16,11 @@ di **produzione** anche generato e verificato, pronto in locale ma non
 ancora caricato su `/impostazioni` (non urgente: l'endpoint di produzione
 non è ancora pubblicato da ADM).
 
+Subito dopo, stessa sessione: **generatore PDF registro letture** (Mod.
+M-bis 36, nuova sezione sulla scheda impianto) e **ricevuta invio S2S in
+PDF** (frontespizio + Quadro A/G + IUT/esito, al posto del semplice `.txt`
+— vedi sezione dedicata più sotto).
+
 **Fatto subito dopo, stessa sessione**: il client SOAP validato è ora
 **collegato al flusso reale** (`dichiarazioni_ee_semestrali`) — schermata di
 riepilogo pre-invio (dati completi, non un riassunto), invio verso
@@ -743,6 +748,104 @@ non solo dalla sandbox con dati fittizi/di prova.
   dati giusti, e che il tentativo di invio (verso produzione, endpoint non
   ancora pubblicato) dia l'errore friendly atteso invece di un crash.
 
+## Import letture: supporto screenshot oltre a PDF (da testare in staging)
+
+Richiesta di Paolo (tramite l'utente): oltre al PDF "stampa pagina" di
+E-distribuzione, poter caricare anche uno screenshot (es. foto da telefono,
+cattura di schermo) quando stampare il PDF non è comodo.
+
+- **`lib/ai/estrai-letture-screenshot.ts`** (nuovo): stesso pattern già
+  usato per l'onboarding licenza (`lib/ai/estrai-licenza.ts`) — fetch
+  diretto all'API Messages di Anthropic (nessun SDK), prompt che chiede
+  POD/matricola/costante K/letture mensili F1/F2/F3 (solo "immessa", stessa
+  assunzione già documentata per il parser PDF), risposta validata con zod
+  (`lib/validation/screenshot-letture.schema.ts`, campi nullable — l'
+  estrazione da immagine non è mai certa al 100%). Riusa `isVisionConfigured`
+  da `estrai-licenza.ts` invece di duplicarla.
+- **`lib/actions/letture.ts`**: `analizzaPdfLetture` ora fa branch su
+  `file.type` — immagine (`image/png|jpeg|webp`) → vision AI, altrimenti →
+  parsing regex esistente (invariato). **Tutta la logica a valle è
+  condivisa** (lookup contatore per POD, blocco su sostituzione contatore,
+  costruzione diff riga per riga, upsert solo dopo conferma): serviva solo
+  produrre la stessa forma intermedia (`RisultatoParsingEdistribuzione`) da
+  entrambi i percorsi. Nuovo campo `origine: "pdf_stampa" | "screenshot"`
+  nel risultato, usato dalla UI per passare l'origine corretta a
+  `upsertLetture` (il valore `"screenshot"` esisteva già nel tipo, non
+  ancora usato).
+- **`lib/actions/documenti.ts`**: `TIPI_CONSENTITI` estesa con
+  `image/png|jpeg|webp` (prima solo PDF/TXT) — `caricaDocumento` già
+  accettava il tipo `"screenshot_letture"` a livello di parametro/enum SQL,
+  semplicemente non era ancora usato da nessun chiamante.
+- **UI** (`components/letture/importa-pdf-dialog.tsx`): input file accetta
+  ora anche immagini, testo aggiornato per spiegare che uno screenshot è
+  letto via IA (meno affidabile del PDF) e va comunque controllato riga per
+  riga come già previsto per il PDF — stessa schermata di revisione, nessun
+  componente nuovo.
+- **Verificato**: typecheck/lint/test puliti (60 test, nessuno nuovo — la
+  logica aggiunta è quasi tutta orchestrazione, senza logica pura
+  isolabile da testare senza mock della chiamata Anthropic). Dev server
+  compila senza errori. **Non testato end-to-end con una vera chiamata
+  vision** (richiederebbe login + un impianto/contatore reale in staging +
+  `ANTHROPIC_API_KEY` configurata) — da provare dall'utente con uno
+  screenshot reale.
+
+## Registro letture PDF + ricevuta invio S2S in PDF (da testare in staging)
+
+Costruito nella stessa sessione dell'invio S2S reale, su richiesta
+dell'utente che ha fornito due riferimenti reali: un registro letture Mod.
+M-bis 36 già compilato (altro cliente, per capire il formato) e la vecchia
+dichiarazione PDF U2S di Giorik (frontespizio + Quadro A/G — utile anche
+per confermare in modo definitivo, con documento reale, che `BLE00474N` è
+il codice giusto per il distributore nel Quadro G).
+
+- **Registro letture** (`lib/pdf/registro-letture-generator.ts`,
+  `lib/actions/registro-letture.ts`, UI
+  `components/impianti/registro-letture-section.tsx`): PDF costruito da zero
+  con `pdf-lib` (non c'era un modulo ufficiale vuoto da riusare come per
+  l'F24) — intestazione (ditta, "Codice Ditta" con prefisso `IT00`
+  ricostruito, ubicazione, ufficio dogane se disponibile) + tabella annuale
+  RIPORTO/12 mesi × matricole contatori, con le letture di registro
+  cumulative (`lib/calc/registro.ts`, stessa funzione già usata per la
+  dichiarazione). È un libro **annuale**, indipendente dalla periodicità
+  della dichiarazione (semestrale dal 2026) — contiene tutti i contatori
+  dell'impianto insieme, non solo quelli di un singolo quadro. Visibile
+  sulla scheda impianto solo se `ha_registro_letture=true` (stesso
+  meccanismo già usato per "Diritto di licenza").
+  **Bug reale trovato e corretto**: la prima versione aveva le colonne
+  della tabella disallineate — le posizioni x per il testo di intestazione
+  ("Mese"/matricole/"Annotazioni") erano calcolate con una logica diversa
+  e inconsistente rispetto a quelle delle righe della griglia, e mancava il
+  confine finale della colonna "Annotazioni" — risultato: l'etichetta
+  "Annotazioni" si sovrapponeva all'ultima colonna dei contatori, e il
+  testo di intestazione sforava nella riga "RIPORTO" sotto (moltiplicatore
+  errato nel calcolo della baseline). **Trovato dall'utente visivamente**,
+  non dai nostri controlli automatici (solo estrazione testo via
+  `pdf-parse`, che non rileva disallineamenti). **Verificato dopo il fix
+  con un metodo più solido**: rasterizzazione della pagina in PNG con lo
+  stesso meccanismo già usato per l'estrazione vision della licenza
+  (`lib/pdf/rasterizza-pagine.ts`, `pdf-parse`'s `getScreenshot` — non
+  serve `poppler`/`pdftoppm`, utile da riusare per verificare visivamente
+  qualunque PDF generato in futuro senza bisogno di aprirlo in staging).
+- **Ricevuta invio S2S in PDF** (`lib/pdf/ricevuta-invio-generator.ts`):
+  sostituisce il semplice `.txt` di prima. 3 pagine — frontespizio (ditta,
+  ubicazione, periodo, IUT, data registrazione, esito ADM) + Quadro A +
+  Quadro G (se presente), righe mese×contatore con totali. Stile ispirato
+  al vecchio PDF U2S reale, non un modulo ufficiale. `tipo_documento_enum`
+  aveva già il valore `'ricevuta'` (non serviva migration) — usato al posto
+  di `'protocollo'` per questo caso, più corretto semanticamente.
+  `scaricaRicevutaDichiarazione` (`lib/actions/dichiarazioni.ts`) ora
+  costruisce questo PDF invece del testo, rileggendo l'XML già archiviato
+  (`parseDichiarazioneEeSemestraleXml`) per i dati di Quadro A/G. Stesso
+  limite di prima: niente "numero di registrazione" (serve
+  `recuperaEsito`, bloccato lato ADM — vedi sezione dedicata).
+- **Verificato**: `npm run test` (60 test, nessuno nuovo per i generatori
+  PDF stessi — verificati manualmente via script + estrazione testo, non
+  con vitest, per lo stesso motivo per cui l'F24 non ha assertion pixel-perfect),
+  typecheck e lint puliti.
+- **Non ancora testato in staging**: richiede login. Va provato generando
+  un registro letture su un impianto con `ha_registro_letture=true` e
+  scaricando una ricevuta dopo un invio S2S riuscito.
+
 ## Verifica esterna (Energix) su scadenze e periodicità
 
 Paolo ha girato due articoli di Energix
@@ -881,4 +984,6 @@ test + CA root ADM già caricati e verificati. Quello che resta:
 - Certificato autenticazione ADM (invio S2S): `app/(app)/impostazioni/`, `components/impostazioni/certificato-adm-section.tsx`, `lib/actions/certificati-adm.ts`, migration `supabase/migrations/20260714140001_certificati_adm.sql`
 - Client SOAP invio ADM + sandbox di test: `lib/adm/soap-client.ts` (orchestrazione, `server-only`), `lib/adm/soap-envelope.ts` (+ `.test.ts`, logica pura), `lib/xml/dichiarazione-test-fittizia.ts` (+ `.test.ts`), `lib/actions/adm-test.ts`, UI: `components/impostazioni/test-invio-adm-section.tsx`, errore persistente riusabile: `components/shared/errore-persistente-dialog.tsx`, CA root ADM: `lib/adm/certificati/`
 - Invio S2S reale (collegato alla dichiarazione vera): `parseDichiarazioneEeSemestraleXml` in `lib/xml/dichiarazione-ee-semestrale.ts`, azioni `recuperaRiepilogoDichiarazione`/`inviaDichiarazioneReale`/`controllaStatoDichiarazioneReale`/`scaricaRicevutaDichiarazione` in `lib/actions/dichiarazioni.ts`, UI: `components/impianti/invio-dichiarazione-dialog.tsx` (schermata di riepilogo pre-invio), migration `supabase/migrations/20260720120001_dichiarazione_invio_reale.sql`
+- Registro letture PDF: `lib/pdf/registro-letture-generator.ts`, `lib/actions/registro-letture.ts`, UI: `components/impianti/registro-letture-section.tsx`
+- Ricevuta invio S2S in PDF: `lib/pdf/ricevuta-invio-generator.ts` (usato da `scaricaRicevutaDichiarazione` in `lib/actions/dichiarazioni.ts`)
 - Setup locale: [`README.md`](./README.md)

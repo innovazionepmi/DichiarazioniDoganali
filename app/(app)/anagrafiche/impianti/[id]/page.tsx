@@ -6,6 +6,7 @@ import { ContatoriList } from "@/components/impianti/contatori-list"
 import { ContatoriRelazioniManager } from "@/components/impianti/contatori-relazioni-manager"
 import { DocumentiSection } from "@/components/shared/documenti-section"
 import { DichiarazioneSection } from "@/components/impianti/dichiarazione-section"
+import { RegistroLettureSection } from "@/components/impianti/registro-letture-section"
 import { updateImpianto } from "@/lib/actions/impianti"
 import { Separator } from "@/components/ui/separator"
 
@@ -124,6 +125,13 @@ export default async function ImpiantoDetailPage({
       <DichiarazioneSection impiantoId={id} dichiarazioni={dichiarazioni ?? []} />
 
       <Separator />
+
+      {impianto.ha_registro_letture && (
+        <>
+          <RegistroLettureSection impiantoId={id} />
+          <Separator />
+        </>
+      )}
 
       <DocumentiSection documenti={documenti ?? []} />
     </div>

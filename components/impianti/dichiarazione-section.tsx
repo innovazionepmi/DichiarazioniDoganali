@@ -114,7 +114,7 @@ export function DichiarazioneSection({
         toast.error(result.error)
         return
       }
-      scaricaBase64(result.base64, result.nomeFile, "text/plain")
+      scaricaBase64(result.base64, result.nomeFile, "application/pdf")
     })
   }
 

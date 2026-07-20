@@ -6,7 +6,13 @@ export type CaricaDocumentoResult =
   | { error: string }
   | { documentoId: string; storagePath: string }
 
-const TIPI_CONSENTITI = ["application/pdf", "text/plain"]
+const TIPI_CONSENTITI = [
+  "application/pdf",
+  "text/plain",
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+]
 const DIMENSIONE_MASSIMA_BYTES = 10 * 1024 * 1024 // 10MB
 
 // Carica un file su Storage (bucket privato 'documenti', RLS solo
@@ -18,13 +24,16 @@ const DIMENSIONE_MASSIMA_BYTES = 10 * 1024 * 1024 // 10MB
 // 'dichiarazione'/'protocollo': il PDF e il file txt che ADM restituisce dopo
 // il caricamento manuale di una dichiarazione sul portale — il protocollo è
 // sempre un .txt, per questo text/plain è ammesso oltre al PDF.
+// 'screenshot_letture': immagini (screenshot del portale E-distribuzione o
+// simili), estratte via vision AI invece del parsing regex usato per i PDF
+// — vedi lib/ai/estrai-letture-screenshot.ts.
 export async function caricaDocumento(
   impiantoId: string,
   tipo: "pdf_letture" | "screenshot_letture" | "dichiarazione" | "protocollo" | "altro",
   file: File
 ): Promise<CaricaDocumentoResult> {
   if (!TIPI_CONSENTITI.includes(file.type)) {
-    return { error: "Formato file non supportato: solo PDF o TXT." }
+    return { error: "Formato file non supportato: solo PDF, TXT o immagine (PNG/JPEG/WEBP)." }
   }
   if (file.size > DIMENSIONE_MASSIMA_BYTES) {
     return { error: "File troppo grande (max 10MB)." }
