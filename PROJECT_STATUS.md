@@ -201,10 +201,11 @@ sotto, ora in costruzione.
   letture) restano da compilare a mano, prima o dopo la conferma.
 - **Non ancora testato end-to-end in staging**: l'estrazione vision non è
   mai stata chiamata dall'app vera (solo dallo script di verifica una
-  tantum) — va provata dall'utente con un documento reale. Richiede
-  `ANTHROPIC_API_KEY` configurata su Vercel (l'utente ne ha già una in
-  `.env.local`, va replicata su Vercel Project Settings). Il modello di
-  default è `claude-sonnet-5` (sovrascrivibile con `ANTHROPIC_MODEL`).
+  tantum) — va provata dall'utente con un documento reale.
+  `ANTHROPIC_API_KEY` **è già configurata su Vercel** (confermato
+  dall'utente il 2026-07-20 — non serve più configurarla, punto aperto
+  precedente chiuso). Il modello di default è `claude-sonnet-5`
+  (sovrascrivibile con `ANTHROPIC_MODEL`).
 
 ## Cosa è stato costruito — Recupero credenziali portali (completo)
 
@@ -785,9 +786,9 @@ cattura di schermo) quando stampare il PDF non è comodo.
   logica aggiunta è quasi tutta orchestrazione, senza logica pura
   isolabile da testare senza mock della chiamata Anthropic). Dev server
   compila senza errori. **Non testato end-to-end con una vera chiamata
-  vision** (richiederebbe login + un impianto/contatore reale in staging +
-  `ANTHROPIC_API_KEY` configurata) — da provare dall'utente con uno
-  screenshot reale.
+  vision** (richiederebbe login + un impianto/contatore reale in staging —
+  `ANTHROPIC_API_KEY` è già configurata su Vercel, non è un blocco) — da
+  provare dall'utente con uno screenshot reale.
 
 ## Registro letture PDF + ricevuta invio S2S in PDF (da testare in staging)
 
@@ -949,10 +950,10 @@ test + CA root ADM già caricati e verificati. Quello che resta:
    ancora da nessuna parte**: questa dichiarazione (quella reale, non la
    sandbox di test) non è ancora collegata al client SOAP — resta un pezzo
    da fare dopo che il punto 1 avrà validato che l'invio funziona.
-5. **Configura `ANTHROPIC_API_KEY` su Vercel Project Settings** (già presente
-   in `.env.local` ma non ancora replicata in produzione) — senza questa, il
-   bottone "Importa da licenza PDF" mostra un errore chiaro invece di un
-   crash, ma non è utilizzabile.
+5. ~~Configura `ANTHROPIC_API_KEY` su Vercel~~ **Fatto** (confermato
+   dall'utente il 2026-07-20) — sia "Importa da licenza PDF" sia il nuovo
+   import screenshot letture dovrebbero funzionare, da provare con un caso
+   reale.
 6. Se un cliente ha più impianti con diritto di licenza di quanti ne entrano
    nel modulo F24 (stimato 6 righe), dimmelo: il codice al momento tronca le
    righe in eccesso, va deciso se passare alla generazione multi-pagina.
