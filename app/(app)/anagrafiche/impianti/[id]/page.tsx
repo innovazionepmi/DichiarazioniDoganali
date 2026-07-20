@@ -47,7 +47,7 @@ export default async function ImpiantoDetailPage({
     supabase
       .from("dichiarazioni_ee_semestrali")
       .select(
-        "id, anno, periodo_riferimento, stato, documento_xml_id, documento_pdf_id, documento_protocollo_id, data_generazione, data_invio"
+        "id, anno, periodo_riferimento, stato, documento_xml_id, documento_pdf_id, documento_protocollo_id, data_generazione, data_invio, iut, esito_codice, esito_descrizione, esito_aggiornato_at"
       )
       .eq("impianto_id", id)
       .order("anno", { ascending: false })

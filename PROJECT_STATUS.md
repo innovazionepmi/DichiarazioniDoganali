@@ -1,26 +1,33 @@
 # Project status — Dichiarazione energia dogane
 
-Ultimo aggiornamento: Fase 4 (dichiarazione doganale) — 🎉 **la sandbox di
-invio S2S funziona end-to-end in ambiente di test**, ciclo completo incluso
-il controllo asincrono: certificato di autenticazione generato via CSR,
-invio SOAP accolto da ADM (**codice 20, "Acquisito a sistema"**), poi
-elaborazione sostanziale completata (**codice 198, "Elaborazione KO: con
-esito"** — rifiuto atteso, dati di test completamente fittizi non
-registrati realmente presso ADM). Percorso non banale (due errori superati
-in sequenza, cronologia completa nella sezione dedicata), ma la meccanica
-tecnica è validata al 100%: connessione, firma, invio, accoglienza,
-elaborazione asincrona. Certificato di **produzione** anche generato e
-verificato, pronto in locale ma non ancora caricato su `/impostazioni` (non
-urgente: l'endpoint di produzione non è ancora pubblicato da ADM).
+Ultimo aggiornamento: Fase 4 (dichiarazione doganale) — 🎉🎉 **catena S2S
+validata al 100% in ambiente di addestramento, fino all'accettazione
+sostanziale definitiva**: certificato di autenticazione (CSR), firma
+XAdES-BES, invio SOAP, accoglienza (**codice 20**), elaborazione sostanziale
+asincrona (**codice 200, "Elaborazione OK: completata con esito finale"**
+— il miglior esito possibile). Ottenuto usando il **CodDitta reale di un
+cliente vero** (Giorik SPA, `BLE00981R`, da licenza + verifica su Excel di
+Paolo) con numeri di produzione/contatori inventati (autorizzato
+esplicitamente dall'utente, rischio nullo: ambiente di addestramento) — la
+prova che serviva un'identità realmente registrata presso ADM, non dati
+completamente fittizi (che si fermavano al codice 198, KO sostanziale).
+Nessun pezzo tecnico rimasto da validare per l'invio S2S in sé. Certificato
+di **produzione** anche generato e verificato, pronto in locale ma non
+ancora caricato su `/impostazioni` (non urgente: l'endpoint di produzione
+non è ancora pubblicato da ADM).
 
-**Prossimo obiettivo (lunedì)**: capire come fare un test in addestramento
-che arrivi a un'**accettazione sostanziale vera** della pratica (non solo
-"acquisito a sistema", ma un esito finale positivo, es. codice 199/200) —
-serve probabilmente usare dati/identità realmente registrate presso ADM
-(es. un `CodDitta`/codice distributore reale di un cliente vero di Paolo,
-comunque a basso rischio perché siamo in ambiente di addestramento) invece
-dei dati completamente inventati usati finora, che falliscono inevitabilmente
-i controlli sostanziali. Da progettare insieme prima di procedere.
+**Fatto subito dopo, stessa sessione**: il client SOAP validato è ora
+**collegato al flusso reale** (`dichiarazioni_ee_semestrali`) — schermata di
+riepilogo pre-invio (dati completi, non un riassunto), invio verso
+l'ambiente **produzione** (endpoint non ancora pubblicato da ADM: l'azione
+è pronta, ritorna l'errore friendly già previsto finché non lo pubblicano),
+controllo stato, e un bottone "Scarica ricevuta" che genera un file di
+testo simile a quello che ADM restituiva con l'invio manuale U2S (esempio
+reale fornito dall'utente: `IUT ...` / `RICEVUTO ...` / riga di esito) — S2S
+non lo fornisce nativamente, va costruito da noi. Dettagli tecnici e
+limiti noti nella sezione dedicata più sotto. **Non ancora testato in
+staging** (richiede login, nessuna credenziale disponibile in sessione) —
+build/typecheck/lint/test (55 totali) puliti.
 
 **⚠️ Urgenza scadenza**: verificato via fonte esterna (Energix) che la
 finestra di presentazione del I semestre 2026 è **1 luglio – 30 settembre
@@ -600,6 +607,19 @@ differenza del certificato di firma sbagliato usato inizialmente per errore
    l'utente ha usato **Namirial** (gratuito) per firmare l'XML con
    `AgenziaDoganeMonopoli.p12` — **funzionato al primo colpo**, invio
    accolto con codice 20.
+4. **Codice ADM 198, "Elaborazione KO: con esito"** (esito sostanziale
+   asincrono, via "Controlla stato"): atteso, dati completamente fittizi
+   (CodDitta finto) non registrati presso ADM. **Risolto ripetendo il test
+   con un CodDitta reale** (Giorik SPA, `BLE00981R` — da licenza ADM reale
+   fornita dall'utente, confermato tramite un file Excel di Paolo: il
+   codice sulla licenza scansionata riportava il prefisso "IT00" che va
+   scartato) e numeri di produzione/contatori completamente inventati
+   (autorizzato esplicitamente — rischio nullo in ambiente di
+   addestramento). XML generato con lo script/generatore **vero**
+   (`lib/xml/dichiarazione-ee-semestrale.ts`, non quello fittizio), fuori
+   dal repo (dati reali del cliente, mai committati). Risultato: **codice
+   200, "Elaborazione OK: completata con esito finale"** — il miglior esito
+   possibile, catena S2S validata fino in fondo.
 
 **Nota per l'invio reale** (quando si collegherà `dichiarazioni_ee_semestrali`
 al client SOAP): il campo `<dichiarante>` della busta SOAP (sandbox: "codice
@@ -619,6 +639,109 @@ aveva comunque assegnato un IUT). `lib/adm/soap-envelope.ts`,
 `components/shared/errore-persistente-dialog.tsx`,
 `components/impostazioni/test-invio-adm-section.tsx`. Test aggiornati (17
 su `soap-envelope.test.ts`, 53 totali nel progetto).
+
+## Fase 4, invio S2S: collegamento al flusso reale (da testare in staging)
+
+Costruito subito dopo aver validato la sandbox (sezione precedente): il
+client SOAP ormai testato viene ora usato anche dalla dichiarazione reale,
+non solo dalla sandbox con dati fittizi/di prova.
+
+- **Migration** `20260720120001_dichiarazione_invio_reale.sql`: aggiunge
+  `iut`, `esito_codice`, `esito_descrizione`, `esito_aggiornato_at` a
+  `dichiarazioni_ee_semestrali` (testuali, non enum — i codici ADM possono
+  cambiare, non vogliamo una migration per ognuno). **Non ancora applicata
+  in staging** — va eseguita a mano via SQL Editor come le precedenti.
+- **Parser XML inverso** (`parseDichiarazioneEeSemestraleXml` in
+  `lib/xml/dichiarazione-ee-semestrale.ts`, + test di round-trip): ricostruisce
+  i dati strutturati (Quadro A/G, CodDitta, periodo) rileggendo l'XML **già
+  generato e archiviato**, invece di ricalcolarli da letture/contatori — la
+  schermata di riepilogo mostra così esattamente ciò che è nel file che
+  Paolo ha firmato, anche se nel frattempo qualcosa a DB fosse cambiato.
+- **Server actions** (`lib/actions/dichiarazioni.ts`):
+  `recuperaRiepilogoDichiarazione` (dati per la schermata di conferma),
+  `inviaDichiarazioneReale` (upload XML firmato + dichiarante, invio verso
+  ambiente **produzione** — mai addestramento, quello è solo per la
+  sandbox), `controllaStatoDichiarazioneReale`, `scaricaRicevutaDichiarazione`.
+- **UI**: nuovo componente `components/impianti/invio-dichiarazione-dialog.tsx`
+  — schermata di riepilogo pre-invio (requisito raccolto in memoria
+  `project_riepilogo_pre_invio_reale.md`, ora implementato): mostra
+  impianto/cliente/CodDitta/periodo, campo dichiarante (CF/P.IVA cliente,
+  precompilato da `clienti.partita_iva`/`codice_fiscale`), tabella completa
+  Quadro A/G mese per mese, upload XML firmato, bottone "Conferma e invia"
+  — solo da lì parte la chiamata SOAP vera. Errori mostrati con
+  `ErrorePersistenteDialog` (stesso componente della sandbox). In
+  `components/impianti/dichiarazione-section.tsx`: nuova colonna
+  "IUT/Esito ADM" e bottoni "Invia dichiarazione" (se XML generato ma non
+  ancora inviato), "Controlla stato" e "Scarica ricevuta" (se IUT presente).
+- **Ricevuta testuale**: dato che S2S non restituisce PDF/protocollo pronti
+  (solo XML OUTPUT/ESITO — vedi sezione precedente), la generiamo noi in
+  formato simile a quello che ADM dava con l'invio manuale U2S. Formato
+  reale fornito dall'utente da un caso storico:
+  ```
+  IUT EBLE00981R202500001
+  RICEVUTO 30/03/2026 11:19
+  BLE00981R 2025 BL: dichiarazione acquisita, UADM Veneto 4. Numero di registrazione 2026/A/10010
+  ```
+  La nostra versione riporta IUT, data/ora (ora quella **ufficiale di ADM**,
+  campo `dataRegistrazione` della risposta di invio — prima usavamo l'ora
+  locale nostra), CodDitta, periodo ed esito. **Manca il "Numero di
+  registrazione"** — vedi punto successivo.
+
+- **`InteropService.recuperaEsito` costruito e testato dal vivo, ma non
+  funziona contro il server reale — problema lato ADM, non nostro**.
+  Trovato il WSDL reale (fornito dall'utente): richiesta
+  `<recuperaEsito xmlns="http://service.ws.sogei.it"><iut>...</iut></recuperaEsito>`,
+  risposta `Risposta{IUT, esito?, data? (base64Binary), dataRegistrazione}`
+  — implementato in `lib/adm/soap-envelope.ts`
+  (`costruisciBustaRecuperaEsito`/`interpretaRispostaRecuperaEsito`,
+  + test) e `lib/adm/soap-client.ts` (`recuperaEsitoSoap`). Il campo `data`
+  contiene il documento ESITO vero e proprio (sigillato da ADM con firma
+  XAdES-BES enveloped, non verificata — non serve per mostrare il contenuto
+  all'operatore): struttura verificata scaricando **manualmente da MONET**
+  (Area Riservata PUDM → Interattivi → MONET → cerca per IUT → dettaglio →
+  icona ESITO) l'esito reale del test Giorik — namespace
+  `rendicontazioni.depositifiscali.monopoli.finanze.it`, elenco di
+  `<Segnalazione>` con Sezione/Gravità/Descrizione/DatoAtteso/DatoInviato.
+  **Il numero di registrazione è lì** (`DatoInviato` della segnalazione con
+  `Sezione=PROTOCOLLAZIONE`, es. `2026/A/1733`) — la funzione che lo estrae
+  (`numeroRegistrazione` in `soap-envelope.ts`) è pronta e testata.
+  **Testato dal vivo contro l'IUT reale di Giorik (ambiente addestramento):
+  la chiamata SOAP a `recuperaEsito` viene rifiutata da ADM stessa** con
+  `codice 10, "Verifica xsd: fallita"` (riprodotto identico due volte, non
+  transitorio). Causa più probabile: il campo `iut` nel WSDL ha un pattern
+  che si aspetta **19 caratteri**, ma i IUT reali attuali ne hanno **20** —
+  sembra un disallineamento tra il servizio che genera lo IUT e quello che
+  dovrebbe rileggerlo, lato ADM, non qualcosa risolvibile lato nostro.
+  **Non collegato alla ricevuta reale** per questo motivo — il codice resta
+  nel progetto, pronto per quando ADM risolve l'incongruenza (o se la loro
+  assistenza confermasse un formato diverso).
+- **Scoperta collaterale, poi corretta due volte**: il test con IUT reale ha
+  prodotto un warning ADM autentico sul Quadro G (`[00027] Identificativo da
+  11 caratteri: PARTITA IVA DISTRTEST01 non corretta`). Prima ipotesi
+  (sbagliata): "serve la Partita IVA nazionale del distributore, non il
+  codice ditta". **Verificato poi sulle istruzioni ufficiali** (Allegato
+  4/Circolare 9/2026, sezione Quadro G): *"deve essere indicato il Codice
+  identificativo officina destinataria (**codice accisa/ditta / partita
+  IVA / codice fiscale / codice Stato / altro identificativo**)"* — sono
+  **tutti formati validi**, "codice accisa/ditta" elencato per primo. Il
+  warning si spiega più semplicemente: `DISTRTEST01` è casualmente lungo 11
+  caratteri (la lunghezza di una PIVA), il validatore ADM ha probabilmente
+  solo provato quel controllo specifico di lunghezza — non significa che
+  PIVA sia l'unico formato accettato. **Conclusione corretta**: il "Codice
+  Ditta" provinciale del distributore (es.
+  `Elenco_Codici_Ditta_e_distribuzione_Spa.pdf` sul sito e-distribuzione.it,
+  trovato dall'utente — es. `BLE00474N` per Belluno) resta probabilmente la
+  scelta più naturale, non un errore da correggere. Lo schema
+  (`idDestinatarioSchema`) accetta già entrambi i formati — nessuna
+  modifica di codice necessaria in nessuno dei due casi. Dettaglio completo
+  in memoria `project_xml_dogane_ricerca.md`.
+- **Non ancora testato in staging**: richiede login (nessuna credenziale
+  disponibile in sessione) — build/typecheck/lint/test puliti (60 test),
+  verificato che il dev server compila senza errori. Va provato dall'utente
+  dopo aver applicato la migration: generare una dichiarazione, cliccare
+  "Invia dichiarazione", verificare che la schermata di riepilogo mostri i
+  dati giusti, e che il tentativo di invio (verso produzione, endpoint non
+  ancora pubblicato) dia l'errore friendly atteso invece di un crash.
 
 ## Verifica esterna (Energix) su scadenze e periodicità
 
@@ -678,13 +801,19 @@ quell'incremento (vedi piano `foamy-jumping-manatee.md`).
 Migration applicate, `/impostazioni` verificata in staging, certificato di
 test + CA root ADM già caricati e verificati. Quello che resta:
 
-1. ~~Riprova l'invio dalla sandbox~~ **Fatto — sandbox validata, esito
-   positivo (codice 20, IUT `20260717M24014065490`)**. Vedi cronologia
-   completa nella sezione "Fase 4, invio S2S: sandbox validata end-to-end".
-   **Prossimo passo naturale ora**: collegare questo client SOAP validato
-   alla dichiarazione reale (`dichiarazioni_ee_semestrali`), finora tenuta
-   deliberatamente separata — vedi anche il requisito del riepilogo
-   pre-invio (sezione dedicata) da rispettare in quell'incremento.
+1. ~~Riprova l'invio dalla sandbox~~ **Fatto — catena S2S validata al 100%,
+   fino all'accettazione sostanziale definitiva (codice 200)**, sia con
+   dati fittizi (fino al codice 20/198) sia con CodDitta reale di un
+   cliente vero (fino al 200). Vedi cronologia completa nella sezione "Fase
+   4, invio S2S: sandbox validata end-to-end".
+1bis. ~~Collega il client SOAP alla dichiarazione reale~~ **Fatto —
+   schermata di riepilogo pre-invio, invio verso produzione, controllo
+   stato, ricevuta scaricabile**. Vedi sezione "Fase 4, invio S2S:
+   collegamento al flusso reale". **Da applicare/testare tu**: esegui la
+   migration `20260720120001_dichiarazione_invio_reale.sql` via SQL Editor,
+   poi prova il flusso "Genera dichiarazione" → "Invia dichiarazione" su un
+   impianto di test in staging (l'invio vero fallirà con un errore friendly
+   finché ADM non pubblica l'endpoint di produzione — atteso, non un bug).
    **Urgente**: la finestra del I semestre 2026 (1 luglio – 30 settembre) è
    già aperta.
 1bis. **Carica anche il certificato di produzione** quando comodo (nessuna
@@ -751,4 +880,5 @@ test + CA root ADM già caricati e verificati. Quello che resta:
 - Tracking dichiarazioni/fatture: `app/(app)/tracking/`, `components/tracking/tracking-table.tsx`, `lib/actions/tracking.ts`, migration `supabase/migrations/20260714120001_tracking.sql`
 - Certificato autenticazione ADM (invio S2S): `app/(app)/impostazioni/`, `components/impostazioni/certificato-adm-section.tsx`, `lib/actions/certificati-adm.ts`, migration `supabase/migrations/20260714140001_certificati_adm.sql`
 - Client SOAP invio ADM + sandbox di test: `lib/adm/soap-client.ts` (orchestrazione, `server-only`), `lib/adm/soap-envelope.ts` (+ `.test.ts`, logica pura), `lib/xml/dichiarazione-test-fittizia.ts` (+ `.test.ts`), `lib/actions/adm-test.ts`, UI: `components/impostazioni/test-invio-adm-section.tsx`, errore persistente riusabile: `components/shared/errore-persistente-dialog.tsx`, CA root ADM: `lib/adm/certificati/`
+- Invio S2S reale (collegato alla dichiarazione vera): `parseDichiarazioneEeSemestraleXml` in `lib/xml/dichiarazione-ee-semestrale.ts`, azioni `recuperaRiepilogoDichiarazione`/`inviaDichiarazioneReale`/`controllaStatoDichiarazioneReale`/`scaricaRicevutaDichiarazione` in `lib/actions/dichiarazioni.ts`, UI: `components/impianti/invio-dichiarazione-dialog.tsx` (schermata di riepilogo pre-invio), migration `supabase/migrations/20260720120001_dichiarazione_invio_reale.sql`
 - Setup locale: [`README.md`](./README.md)

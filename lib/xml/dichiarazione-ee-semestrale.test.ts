@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest"
-import { generaDichiarazioneEeSemestraleXml } from "./dichiarazione-ee-semestrale"
+import {
+  generaDichiarazioneEeSemestraleXml,
+  parseDichiarazioneEeSemestraleXml,
+} from "./dichiarazione-ee-semestrale"
 import type { DichiarazioneEeSemestraleInput } from "../validation/dichiarazione-ee.schema"
 
 // Dati interamente inventati (nessun dato reale del cliente) — un contatore
@@ -141,5 +144,45 @@ describe("generaDichiarazioneEeSemestraleXml", () => {
         quadroA: INPUT_SINTETICO.quadroA.slice(0, 5),
       })
     ).toThrow()
+  })
+})
+
+describe("parseDichiarazioneEeSemestraleXml", () => {
+  it("ricostruisce gli stessi dati (round-trip) di un XML con Quadro G", () => {
+    const xml = generaDichiarazioneEeSemestraleXml(INPUT_SINTETICO)
+    const parsed = parseDichiarazioneEeSemestraleXml(xml)
+    expect(parsed.codDitta).toBe("ABC12345D")
+    expect(parsed.codAtt).toBe(1)
+    expect(parsed.anno).toBe(2026)
+    expect(parsed.periodoRiferimento).toBe(1)
+    expect(parsed.quadroA).toHaveLength(6)
+    expect(parsed.quadroA[0]).toEqual({
+      numMese: 1,
+      contatori: [
+        { matricola: "PROD001", lettA: 100, lettP: 0, diffLett: 100, costLett: 1, kwh: 100 },
+      ],
+    })
+    expect(parsed.quadroG).toHaveLength(6)
+    expect(parsed.quadroG![0]).toEqual({
+      numMese: 1,
+      contatori: [
+        {
+          matricola: "IMM001",
+          lettA: 40,
+          lettP: 0,
+          diffLett: 40,
+          costLett: 1,
+          kwh: 40,
+          tipo: "B",
+          id: "ABC12345D",
+        },
+      ],
+    })
+  })
+
+  it("gestisce l'assenza del Quadro G", () => {
+    const xml = generaDichiarazioneEeSemestraleXml({ ...INPUT_SINTETICO, quadroG: null })
+    const parsed = parseDichiarazioneEeSemestraleXml(xml)
+    expect(parsed.quadroG).toBeNull()
   })
 })

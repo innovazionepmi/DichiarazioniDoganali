@@ -1,3 +1,4 @@
+import { XMLParser } from "fast-xml-parser"
 import {
   dichiarazioneEeSemestraleSchema,
   type DichiarazioneEeSemestraleInput,
@@ -132,4 +133,60 @@ export function generaDichiarazioneEeSemestraleXml(input: DichiarazioneEeSemestr
     quadroG +
     `</EnergiaElettricaSemestrale>`
   )
+}
+
+const parser = new XMLParser({
+  removeNSPrefix: true,
+  ignoreAttributes: false,
+  attributeNamePrefix: "@_",
+  isArray: (name) => name === "Mese" || name === "Contatore",
+})
+
+// Inverso del generatore: ricostruisce i dati strutturati dall'XML già
+// generato e archiviato (documento_xml_id), invece di ricalcolarli da
+// letture/contatori — così la schermata di riepilogo pre-invio mostra
+// esattamente ciò che è stato scritto nel file (quello poi firmato da
+// Paolo), anche se nel frattempo qualcosa a DB fosse cambiato.
+export function parseDichiarazioneEeSemestraleXml(xml: string): DichiarazioneEeSemestraleInput {
+  const parsed = parser.parse(xml)
+  const root = parsed.EnergiaElettricaSemestrale
+
+  function contatoreProduzione(c: Record<string, unknown>) {
+    return {
+      matricola: String(c.Matr),
+      lettA: Number(c.LettA),
+      lettP: Number(c.LettP),
+      diffLett: Number(c.DiffLett),
+      costLett: Number(c.CostLett),
+      kwh: Number(c.kWh),
+    }
+  }
+
+  function contatoreCeduta(c: Record<string, unknown>) {
+    return {
+      ...contatoreProduzione({ ...c, kWh: c.Kwh }),
+      tipo: "B" as const,
+      id: String(c.Id),
+    }
+  }
+
+  function mesiQuadro(
+    quadro: Record<string, unknown> | undefined,
+    mappaContatore: (c: Record<string, unknown>) => ReturnType<typeof contatoreProduzione>
+  ) {
+    const mesi = (quadro?.Mese ?? []) as Record<string, unknown>[]
+    return mesi.map((mese) => ({
+      numMese: Number(mese["@_NumMese"]),
+      contatori: (mese.Contatore as Record<string, unknown>[]).map(mappaContatore),
+    }))
+  }
+
+  return dichiarazioneEeSemestraleSchema.parse({
+    codDitta: String(root.Dich.CodDitta),
+    codAtt: Number(root.Dich.CodAtt),
+    anno: Number(root.Periodo.Anno),
+    periodoRiferimento: Number(root.Periodo.PeriodoRiferimento),
+    quadroA: mesiQuadro(root.A, contatoreProduzione),
+    quadroG: root.G ? mesiQuadro(root.G, contatoreCeduta) : null,
+  })
 }

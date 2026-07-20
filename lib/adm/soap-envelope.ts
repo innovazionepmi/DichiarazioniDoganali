@@ -189,6 +189,137 @@ export function interpretaRispostaInvio(httpBody: string): EsitoInvioAdm {
   }
 }
 
+// --- InteropService.recuperaEsito -------------------------------------
+// Struttura verificata sul WSDL reale (InteropService.wsdl, fornito
+// dall'utente): richiesta { iut }, risposta Risposta { IUT, esito?, data?
+// (base64Binary), dataRegistrazione }. `data` contiene il documento ESITO
+// vero e proprio, sigillato da ADM con firma XAdES-BES enveloped — non
+// verifichiamo quella firma (serve solo ai controlli legali di ADM, non a
+// mostrare il contenuto all'operatore), leggiamo solo gli elementi
+// <Segnalazione> al suo interno. Struttura del documento ESITO (namespace
+// rendicontazioni.depositifiscali.monopoli.finanze.it) verificata su un
+// esempio reale scaricato da MONET (ambiente di addestramento, non da un
+// XSD ufficiale): il "numero di registrazione" (es. "2026/A/1733") sta nel
+// campo DatoInviato della segnalazione con Sezione="PROTOCOLLAZIONE".
+
+export type SegnalazioneEsito = {
+  sezione: string
+  gravita: string
+  descrizione: string
+  datoAtteso: string
+  datoInviato: string
+  progressivo: number
+}
+
+export type EsitoRecuperoEsito =
+  | {
+      ok: true
+      iut: string
+      codice: string | null
+      messaggi: string[]
+      dataRegistrazione: string | null
+      numeroRegistrazione: string | null
+      segnalazioni: SegnalazioneEsito[]
+    }
+  | { ok: false; categoria: CategoriaErroreAdm; messaggio: string; dettaglioTecnico?: string }
+
+export function costruisciBustaRecuperaEsito(iut: string): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
+  <soapenv:Body>
+    <recuperaEsito xmlns="http://service.ws.sogei.it">
+      <iut>${escapeXml(iut)}</iut>
+    </recuperaEsito>
+  </soapenv:Body>
+</soapenv:Envelope>`
+}
+
+const parserEsito = new XMLParser({
+  removeNSPrefix: true,
+  ignoreAttributes: false,
+  trimValues: true,
+  isArray: (name) => name === "Segnalazione",
+})
+
+function estraiSegnalazioni(xmlEsitoDecodificato: string): SegnalazioneEsito[] {
+  let parsed: Record<string, unknown>
+  try {
+    parsed = parserEsito.parse(xmlEsitoDecodificato)
+  } catch {
+    return []
+  }
+  const segnalazioni = (parsed?.Esito as Record<string, unknown> | undefined)?.Segnalazione as
+    | Record<string, unknown>[]
+    | undefined
+  if (!segnalazioni) return []
+  return segnalazioni.map((s) => ({
+    sezione: String(s.Sezione ?? ""),
+    gravita: String(s.Gravita ?? ""),
+    descrizione: String(s.Descrizione ?? ""),
+    datoAtteso: String(s.DatoAtteso ?? ""),
+    datoInviato: String(s.DatoInviato ?? ""),
+    progressivo: Number(s.Progressivo ?? 0),
+  }))
+}
+
+export function numeroRegistrazione(segnalazioni: SegnalazioneEsito[]): string | null {
+  const protocollazione = segnalazioni.find((s) => s.sezione === "PROTOCOLLAZIONE")
+  return protocollazione?.datoInviato || null
+}
+
+export function interpretaRispostaRecuperaEsito(httpBody: string): EsitoRecuperoEsito {
+  let parsed: Record<string, unknown>
+  try {
+    parsed = parser.parse(httpBody)
+  } catch {
+    return {
+      ok: false,
+      categoria: "altro",
+      messaggio: "La risposta di ADM non è un XML valido.",
+      dettaglioTecnico: httpBody.slice(0, 2000),
+    }
+  }
+
+  const envelope = parsed?.Envelope as Record<string, unknown> | undefined
+  const body = envelope?.Body as Record<string, unknown> | undefined
+  const fault = body?.Fault as Record<string, unknown> | undefined
+  if (fault) {
+    return {
+      ok: false,
+      categoria: "altro",
+      messaggio: String(fault.faultstring ?? "Errore SOAP restituito da ADM (senza dettaglio)."),
+      dettaglioTecnico: JSON.stringify(fault),
+    }
+  }
+
+  const risposta = (body?.recuperaEsitoResponse as Record<string, unknown> | undefined)
+    ?.recuperaEsitoReturn as Record<string, unknown> | undefined
+  if (!risposta) {
+    return {
+      ok: false,
+      categoria: "altro",
+      messaggio: "Risposta di ADM in un formato non riconosciuto.",
+      dettaglioTecnico: httpBody.slice(0, 2000),
+    }
+  }
+
+  const esito = risposta.esito as Record<string, unknown> | undefined
+  const dataBase64 = risposta.data ? String(risposta.data) : null
+  const segnalazioni = dataBase64
+    ? estraiSegnalazioni(Buffer.from(dataBase64, "base64").toString("utf-8"))
+    : []
+
+  return {
+    ok: true,
+    iut: String(risposta.IUT ?? ""),
+    codice: esito?.codice ? String(esito.codice) : null,
+    messaggi: estraiMessaggi(esito?.messaggio),
+    dataRegistrazione: risposta.dataRegistrazione ? String(risposta.dataRegistrazione) : null,
+    numeroRegistrazione: numeroRegistrazione(segnalazioni),
+    segnalazioni,
+  }
+}
+
 export function interpretaCodiceStato(codiceGrezzo: string): EsitoControlloStato {
   const codice = codiceGrezzo.trim().replace(/"/g, "")
   const descrizione = DESCRIZIONE_CODICE[codice] ?? `Codice non riconosciuto: ${codice}`

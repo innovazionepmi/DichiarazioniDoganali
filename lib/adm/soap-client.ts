@@ -4,13 +4,22 @@ import { createServiceRoleClient } from "@/lib/supabase/service-role"
 import {
   categorizzaErroreConnessione,
   costruisciBustaInvio,
+  costruisciBustaRecuperaEsito,
   interpretaCodiceStato,
   interpretaRispostaInvio,
+  interpretaRispostaRecuperaEsito,
   type EsitoControlloStato,
   type EsitoInvioAdm,
+  type EsitoRecuperoEsito,
 } from "./soap-envelope"
 
-export type { CategoriaErroreAdm, EsitoControlloStato, EsitoInvioAdm } from "./soap-envelope"
+export type {
+  CategoriaErroreAdm,
+  EsitoControlloStato,
+  EsitoInvioAdm,
+  EsitoRecuperoEsito,
+  SegnalazioneEsito,
+} from "./soap-envelope"
 
 // Client SOAP per il servizio di invio dichiarazioni EE semestrale di ADM
 // (Fase 4). Node `https` diretto invece di `fetch`: serve il controllo
@@ -40,7 +49,7 @@ type Ambiente = "test" | "produzione"
 
 const CONFIGURAZIONE_AMBIENTE: Record<
   Ambiente,
-  { invio: string; controlloStato: string; soapAction: string } | null
+  { invio: string; controlloStato: string; soapAction: string; recuperoEsito: string } | null
 > = {
   test: {
     invio:
@@ -48,6 +57,10 @@ const CONFIGURAZIONE_AMBIENTE: Record<
     controlloStato:
       "https://platformtest.adm.gov.it/InteropRServiceWeb/services/InteropRService/selezionaStato",
     soapAction: "http://process.eesemestralim24.domest.sogei.it/wsdl/EEsemestraliM24Service",
+    // Endpoint InteropService.recuperaEsito — verificato sul WSDL reale
+    // (InteropService.wsdl, fornito dall'utente): SOAPAction vuoto
+    // (soapAction="" nel binding), stile document/literal.
+    recuperoEsito: "https://platformtest.adm.gov.it/InteropServiceWEB/services/InteropService",
   },
   produzione: null,
 }
@@ -220,4 +233,52 @@ export async function controllaStatoSoap({
     })
     req.end()
   })
+}
+
+// Recupero esito completo (SOAP, InteropService.recuperaEsito) — a
+// differenza del controllo stato REST (bare codice), restituisce il
+// documento ESITO firmato da ADM con il numero di registrazione e i
+// dettagli dei controlli sostanziali (vedi soap-envelope.ts per la
+// struttura, verificata sul WSDL reale + un esempio scaricato da MONET).
+export async function recuperaEsitoSoap({
+  ambiente,
+  iut,
+}: {
+  ambiente: Ambiente
+  iut: string
+}): Promise<EsitoRecuperoEsito> {
+  const config = CONFIGURAZIONE_AMBIENTE[ambiente]
+  if (!config) {
+    return {
+      ok: false,
+      categoria: "altro",
+      messaggio: `L'ambiente "${ambiente}" non è ancora configurato.`,
+    }
+  }
+
+  const certificato = await caricaCertificatoPerAmbiente(ambiente)
+  if ("errore" in certificato) {
+    return { ok: false, categoria: "certificato", messaggio: certificato.errore }
+  }
+
+  const busta = costruisciBustaRecuperaEsito(iut)
+
+  try {
+    const risposta = await eseguiPost(
+      config.recuperoEsito,
+      busta,
+      {
+        "Content-Type": "text/xml; charset=utf-8",
+        SOAPAction: `""`,
+      },
+      {
+        pfx: certificato.pfx,
+        passphrase: certificato.passphrase,
+      }
+    )
+    return interpretaRispostaRecuperaEsito(risposta.body)
+  } catch (err) {
+    const { categoria, messaggio } = categorizzaErroreConnessione(err)
+    return { ok: false, categoria, messaggio, dettaglioTecnico: err instanceof Error ? err.message : String(err) }
+  }
 }

@@ -3,8 +3,11 @@ import {
   categorizzaCodice,
   categorizzaErroreConnessione,
   costruisciBustaInvio,
+  costruisciBustaRecuperaEsito,
   interpretaCodiceStato,
   interpretaRispostaInvio,
+  interpretaRispostaRecuperaEsito,
+  numeroRegistrazione,
 } from "./soap-envelope"
 
 describe("costruisciBustaInvio", () => {
@@ -148,6 +151,74 @@ describe("categorizzaCodice", () => {
     expect(categorizzaCodice("10")).toBe("xml_malformato")
     expect(categorizzaCodice("197")).toBe("esito_negativo")
     expect(categorizzaCodice("9999")).toBe("altro")
+  })
+})
+
+describe("costruisciBustaRecuperaEsito", () => {
+  it("include lo IUT nel namespace corretto (http://service.ws.sogei.it)", () => {
+    const busta = costruisciBustaRecuperaEsito("20260101X00000000001")
+    expect(busta).toContain('<recuperaEsito xmlns="http://service.ws.sogei.it">')
+    expect(busta).toContain("<iut>20260101X00000000001</iut>")
+  })
+})
+
+// Dati interamente inventati (nessun dato reale del cliente) — struttura
+// verificata su un esito reale scaricato da MONET, non i valori.
+function bustaRecuperaEsitoFinta(esitoXml: string | null): string {
+  const dataBase64 = esitoXml ? Buffer.from(esitoXml, "utf-8").toString("base64") : ""
+  return `<?xml version="1.0"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
+  <soapenv:Body>
+    <ns:recuperaEsitoResponse xmlns:ns="http://service.ws.sogei.it">
+      <recuperaEsitoReturn>
+        <IUT>20260101X00000000001</IUT>
+        <esito><codice>200</codice><messaggio>Elaborazione OK: completata con esito finale</messaggio></esito>
+        ${dataBase64 ? `<data>${dataBase64}</data>` : ""}
+        <dataRegistrazione>2026-01-01</dataRegistrazione>
+      </recuperaEsitoReturn>
+    </ns:recuperaEsitoResponse>
+  </soapenv:Body>
+</soapenv:Envelope>`
+}
+
+const ESITO_XML_FINTO = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Esito xmlns="http://rendicontazioni.depositifiscali.monopoli.finanze.it"><Segnalazione><Sezione>PROTOCOLLAZIONE</Sezione><Gravita>INFO</Gravita><Descrizione>ABC12345D 2026 - Semestre 1 - Ufficio TEST001: dichiarazione acquisita</Descrizione><DatoAtteso>Ambito 1</DatoAtteso><DatoInviato>2026/A/9999</DatoInviato><Progressivo>1</Progressivo></Segnalazione><Segnalazione><Sezione>CONVALIDA</Sezione><Gravita>WARNING</Gravita><Descrizione>[00027] Identificativo da 11 caratteri: PARTITA IVA FINTA01 non corretta (quadro G)</Descrizione><DatoAtteso></DatoAtteso><DatoInviato></DatoInviato><Progressivo>2</Progressivo></Segnalazione></Esito>`
+
+describe("interpretaRispostaRecuperaEsito", () => {
+  it("estrae IUT, codice, dataRegistrazione e numero di registrazione dal documento ESITO", () => {
+    const risultato = interpretaRispostaRecuperaEsito(bustaRecuperaEsitoFinta(ESITO_XML_FINTO))
+    expect(risultato.ok).toBe(true)
+    if (risultato.ok) {
+      expect(risultato.iut).toBe("20260101X00000000001")
+      expect(risultato.codice).toBe("200")
+      expect(risultato.dataRegistrazione).toBe("2026-01-01")
+      expect(risultato.numeroRegistrazione).toBe("2026/A/9999")
+      expect(risultato.segnalazioni).toHaveLength(2)
+      expect(risultato.segnalazioni[1].gravita).toBe("WARNING")
+    }
+  })
+
+  it("gestisce l'assenza del campo data (nessun esito ancora disponibile)", () => {
+    const risultato = interpretaRispostaRecuperaEsito(bustaRecuperaEsitoFinta(null))
+    expect(risultato.ok).toBe(true)
+    if (risultato.ok) {
+      expect(risultato.numeroRegistrazione).toBeNull()
+      expect(risultato.segnalazioni).toEqual([])
+    }
+  })
+
+  it("segnala un formato inatteso (nessun recuperaEsitoReturn)", () => {
+    const risultato = interpretaRispostaRecuperaEsito("<Envelope><Body><Altro/></Body></Envelope>")
+    expect(risultato.ok).toBe(false)
+  })
+})
+
+describe("numeroRegistrazione", () => {
+  it("ritorna null se non c'è una segnalazione PROTOCOLLAZIONE", () => {
+    expect(
+      numeroRegistrazione([
+        { sezione: "CONVALIDA", gravita: "WARNING", descrizione: "", datoAtteso: "", datoInviato: "", progressivo: 1 },
+      ])
+    ).toBeNull()
   })
 })
 

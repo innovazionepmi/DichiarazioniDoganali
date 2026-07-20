@@ -29,8 +29,18 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { generaDichiarazioneSemestrale, caricaEsitoDichiarazione } from "@/lib/actions/dichiarazioni"
+import {
+  generaDichiarazioneSemestrale,
+  caricaEsitoDichiarazione,
+  controllaStatoDichiarazioneReale,
+  scaricaRicevutaDichiarazione,
+} from "@/lib/actions/dichiarazioni"
 import { scaricaDocumento } from "@/lib/actions/documenti"
+import { InvioDichiarazioneDialog } from "@/components/impianti/invio-dichiarazione-dialog"
+import {
+  ErrorePersistenteDialog,
+  type ErroreOperazione,
+} from "@/components/shared/errore-persistente-dialog"
 
 export interface DichiarazioneStorico {
   id: string
@@ -42,6 +52,10 @@ export interface DichiarazioneStorico {
   documento_protocollo_id: string | null
   data_generazione: string
   data_invio: string | null
+  iut: string | null
+  esito_codice: string | null
+  esito_descrizione: string | null
+  esito_aggiornato_at: string | null
 }
 
 function scaricaBase64(base64: string, nomeFile: string, mimeType: string) {
@@ -74,6 +88,35 @@ export function DichiarazioneSection({
   const [semestre, setSemestre] = useState<1 | 2>(1)
   const pdfInputRef = useRef<Record<string, HTMLInputElement | null>>({})
   const protocolloInputRef = useRef<Record<string, HTMLInputElement | null>>({})
+  const [invioDichiarazioneId, setInvioDichiarazioneId] = useState<string | null>(null)
+  const [errore, setErrore] = useState<ErroreOperazione | null>(null)
+
+  function handleControllaStato(dichiarazioneId: string) {
+    startTransition(async () => {
+      const result = await controllaStatoDichiarazioneReale(dichiarazioneId)
+      if ("error" in result) {
+        toast.error(result.error)
+        return
+      }
+      if (!result.ok) {
+        setErrore(result)
+        return
+      }
+      toast.success(`Stato: ${result.descrizione}`)
+      router.refresh()
+    })
+  }
+
+  function handleScaricaRicevuta(dichiarazioneId: string) {
+    startTransition(async () => {
+      const result = await scaricaRicevutaDichiarazione(dichiarazioneId)
+      if ("error" in result) {
+        toast.error(result.error)
+        return
+      }
+      scaricaBase64(result.base64, result.nomeFile, "text/plain")
+    })
+  }
 
   function handleGenera() {
     startTransition(async () => {
@@ -139,6 +182,7 @@ export function DichiarazioneSection({
                 <TableHead>Periodo</TableHead>
                 <TableHead>Stato</TableHead>
                 <TableHead>Generata il</TableHead>
+                <TableHead>IUT / Esito ADM</TableHead>
                 <TableHead>PDF ADM</TableHead>
                 <TableHead>Protocollo</TableHead>
                 <TableHead />
@@ -157,6 +201,21 @@ export function DichiarazioneSection({
                   </TableCell>
                   <TableCell>
                     {new Date(d.data_generazione).toLocaleDateString("it-IT")}
+                  </TableCell>
+                  <TableCell className="text-xs">
+                    {d.iut ? (
+                      <>
+                        <div className="font-mono">{d.iut}</div>
+                        {d.esito_descrizione && (
+                          <div className="text-muted-foreground">
+                            {d.esito_descrizione}
+                            {d.esito_codice ? ` (${d.esito_codice})` : ""}
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <span className="text-muted-foreground">Non ancora inviata via S2S</span>
+                    )}
                   </TableCell>
                   <TableCell>
                     <input
@@ -205,16 +264,47 @@ export function DichiarazioneSection({
                     </Button>
                   </TableCell>
                   <TableCell>
-                    {d.documento_xml_id && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        disabled={pending}
-                        onClick={() => handleScaricaXml(d.documento_xml_id!)}
-                      >
-                        Scarica XML
-                      </Button>
-                    )}
+                    <div className="flex flex-wrap gap-2">
+                      {d.documento_xml_id && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={pending}
+                          onClick={() => handleScaricaXml(d.documento_xml_id!)}
+                        >
+                          Scarica XML
+                        </Button>
+                      )}
+                      {d.documento_xml_id && !d.iut && (
+                        <Button
+                          size="sm"
+                          disabled={pending}
+                          onClick={() => setInvioDichiarazioneId(d.id)}
+                        >
+                          Invia dichiarazione
+                        </Button>
+                      )}
+                      {d.iut && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={pending}
+                          onClick={() => handleControllaStato(d.id)}
+                        >
+                          Controlla stato
+                        </Button>
+                      )}
+                      {d.iut && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={pending}
+                          onClick={() => handleScaricaRicevuta(d.id)}
+                        >
+                          Scarica ricevuta
+                        </Button>
+                      )}
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
@@ -222,6 +312,18 @@ export function DichiarazioneSection({
           </Table>
         </div>
       )}
+
+      {invioDichiarazioneId && (
+        <InvioDichiarazioneDialog
+          dichiarazioneId={invioDichiarazioneId}
+          open={invioDichiarazioneId !== null}
+          onOpenChange={(next) => {
+            if (!next) setInvioDichiarazioneId(null)
+          }}
+        />
+      )}
+
+      <ErrorePersistenteDialog errore={errore} onChiudi={() => setErrore(null)} />
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>

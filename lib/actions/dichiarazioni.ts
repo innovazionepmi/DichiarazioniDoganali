@@ -3,9 +3,21 @@
 import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
 import { letturaRegistro, mesePrecedente, type LetturaMensile } from "@/lib/calc/registro"
-import { generaDichiarazioneEeSemestraleXml } from "@/lib/xml/dichiarazione-ee-semestrale"
-import { dichiarazioneEeSemestraleSchema } from "@/lib/validation/dichiarazione-ee.schema"
-import { caricaDocumento } from "@/lib/actions/documenti"
+import {
+  generaDichiarazioneEeSemestraleXml,
+  parseDichiarazioneEeSemestraleXml,
+} from "@/lib/xml/dichiarazione-ee-semestrale"
+import {
+  dichiarazioneEeSemestraleSchema,
+  type DichiarazioneEeSemestraleInput,
+} from "@/lib/validation/dichiarazione-ee.schema"
+import { caricaDocumento, scaricaDocumento } from "@/lib/actions/documenti"
+import {
+  inviaDichiarazioneSoap,
+  controllaStatoSoap,
+  type EsitoInvioAdm,
+  type EsitoControlloStato,
+} from "@/lib/adm/soap-client"
 
 export type ActionResult = { error?: string } | void
 
@@ -272,4 +284,254 @@ export async function caricaEsitoDichiarazione(
   if (updateError) return { error: updateError.message }
 
   revalidatePath(`/anagrafiche/impianti/${riga.impianto_id}`)
+}
+
+export type RiepilogoDichiarazioneResult =
+  | { error: string }
+  | {
+      dati: DichiarazioneEeSemestraleInput
+      impiantoNome: string
+      clienteRagioneSociale: string
+      dichiaranteSuggerito: string
+    }
+
+// Rilegge e ri-analizza l'XML già generato e archiviato (non lo ricalcola da
+// letture/contatori): la schermata di riepilogo pre-invio deve mostrare
+// esattamente ciò che è nel file che Paolo ha firmato, non un dato
+// potenzialmente disallineato se qualcosa a DB fosse cambiato nel frattempo.
+export async function recuperaRiepilogoDichiarazione(
+  dichiarazioneId: string
+): Promise<RiepilogoDichiarazioneResult> {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) return { error: "Non autenticato" }
+
+  const { data: riga, error } = await supabase
+    .from("dichiarazioni_ee_semestrali")
+    .select("documento_xml_id, impianto_id")
+    .eq("id", dichiarazioneId)
+    .single()
+  if (error || !riga) return { error: error?.message ?? "Dichiarazione non trovata" }
+  if (!riga.documento_xml_id) return { error: "XML non ancora generato per questa dichiarazione." }
+
+  const xmlResult = await scaricaDocumento(riga.documento_xml_id)
+  if ("error" in xmlResult) return xmlResult
+
+  let dati: DichiarazioneEeSemestraleInput
+  try {
+    dati = parseDichiarazioneEeSemestraleXml(Buffer.from(xmlResult.base64, "base64").toString("utf-8"))
+  } catch {
+    return { error: "L'XML archiviato non è leggibile: rigenera la dichiarazione." }
+  }
+
+  const { data: impianto, error: impiantoError } = await supabase
+    .from("impianti")
+    .select("nome_impianto, cliente_id")
+    .eq("id", riga.impianto_id)
+    .single()
+  if (impiantoError || !impianto) return { error: impiantoError?.message ?? "Impianto non trovato" }
+
+  const { data: cliente } = await supabase
+    .from("clienti")
+    .select("ragione_sociale, partita_iva, codice_fiscale")
+    .eq("id", impianto.cliente_id)
+    .single()
+
+  return {
+    dati,
+    impiantoNome: impianto.nome_impianto,
+    clienteRagioneSociale: cliente?.ragione_sociale ?? "",
+    dichiaranteSuggerito: cliente?.partita_iva || cliente?.codice_fiscale || "",
+  }
+}
+
+// Invio S2S reale (ambiente produzione — mai addestramento, quello è solo
+// per la nostra sandbox di validazione). Riusa lo stesso client SOAP già
+// validato in addestramento (lib/adm/soap-client.ts). L'endpoint di
+// produzione non è ancora pubblicato da ADM: fino ad allora questa azione
+// ritorna l'errore friendly già previsto da inviaDichiarazioneSoap
+// ("ambiente non ancora configurato"), non un crash — la funzione resta
+// pronta per quando l'endpoint sarà disponibile.
+export async function inviaDichiarazioneReale(
+  dichiarazioneId: string,
+  formData: FormData
+): Promise<EsitoInvioAdm | { error: string }> {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) return { error: "Non autenticato" }
+
+  const file = formData.get("file")
+  if (!(file instanceof File) || file.size === 0) {
+    return { error: "Seleziona il file XML firmato" }
+  }
+  const dichiarante = String(formData.get("dichiarante") ?? "").trim()
+  if (!dichiarante) {
+    return { error: "Codice fiscale/P.IVA del dichiarante mancante" }
+  }
+
+  const { data: riga, error } = await supabase
+    .from("dichiarazioni_ee_semestrali")
+    .select("id, impianto_id")
+    .eq("id", dichiarazioneId)
+    .single()
+  if (error || !riga) return { error: error?.message ?? "Dichiarazione non trovata" }
+
+  const xmlFirmato = Buffer.from(await file.arrayBuffer())
+  const risultato = await inviaDichiarazioneSoap({ ambiente: "produzione", xmlFirmato, dichiarante })
+
+  const iut = risultato.ok ? risultato.iut : risultato.iut
+  if (iut) {
+    await supabase
+      .from("dichiarazioni_ee_semestrali")
+      .update({
+        iut,
+        esito_codice: risultato.ok ? risultato.esitoCodice : null,
+        esito_descrizione: risultato.ok
+          ? risultato.esitoMessaggi.join(" — ") || null
+          : risultato.messaggio,
+        esito_aggiornato_at: new Date().toISOString(),
+        // Data ufficiale di registrazione riportata da ADM stessa (campo
+        // dataRegistrazione dell'Output) — preferita alla nostra ora
+        // locale per la ricevuta, quando disponibile.
+        ...(risultato.ok && risultato.dataRegistrazione
+          ? { data_registrazione_adm: risultato.dataRegistrazione }
+          : {}),
+        ...(risultato.ok
+          ? { stato: "inviata", data_invio: new Date().toISOString().slice(0, 10) }
+          : {}),
+      })
+      .eq("id", dichiarazioneId)
+  }
+
+  revalidatePath(`/anagrafiche/impianti/${riga.impianto_id}`)
+  return risultato
+}
+
+// Controllo stato asincrono (esito sostanziale) per un invio reale già
+// effettuato — stesso endpoint REST già validato in addestramento.
+export async function controllaStatoDichiarazioneReale(
+  dichiarazioneId: string
+): Promise<EsitoControlloStato | { error: string }> {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) return { error: "Non autenticato" }
+
+  const { data: riga, error } = await supabase
+    .from("dichiarazioni_ee_semestrali")
+    .select("iut, impianto_id")
+    .eq("id", dichiarazioneId)
+    .single()
+  if (error || !riga) return { error: error?.message ?? "Dichiarazione non trovata" }
+  if (!riga.iut) return { error: "Nessun IUT disponibile: invia prima la dichiarazione." }
+
+  const risultato = await controllaStatoSoap({ ambiente: "produzione", iut: riga.iut })
+
+  if (risultato.ok) {
+    await supabase
+      .from("dichiarazioni_ee_semestrali")
+      .update({
+        esito_codice: risultato.codice,
+        esito_descrizione: risultato.descrizione,
+        esito_aggiornato_at: new Date().toISOString(),
+      })
+      .eq("id", dichiarazioneId)
+    revalidatePath(`/anagrafiche/impianti/${riga.impianto_id}`)
+  }
+
+  return risultato
+}
+
+export type ScaricaRicevutaResult = { error: string } | { base64: string; nomeFile: string }
+
+// Genera (o riscarica, se già generata) una ricevuta testuale simile a
+// quella che ADM restituiva con l'invio manuale U2S — S2S non la fornisce
+// nativamente (solo messaggi XML OUTPUT/ESITO), quindi la costruiamo noi.
+// "Numero di registrazione" non è disponibile (richiederebbe
+// InteropService.recuperaEsito, non ancora implementato — vedi
+// PROJECT_STATUS.md): la ricevuta riporta IUT + esito, non quel numero.
+export async function scaricaRicevutaDichiarazione(
+  dichiarazioneId: string
+): Promise<ScaricaRicevutaResult> {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) return { error: "Non autenticato" }
+
+  const { data: riga, error } = await supabase
+    .from("dichiarazioni_ee_semestrali")
+    .select(
+      "impianto_id, anno, periodo_riferimento, iut, esito_codice, esito_descrizione, esito_aggiornato_at, data_registrazione_adm, documento_protocollo_id"
+    )
+    .eq("id", dichiarazioneId)
+    .single()
+  if (error || !riga) return { error: error?.message ?? "Dichiarazione non trovata" }
+  if (!riga.iut) {
+    return { error: "Nessun IUT disponibile: invia la dichiarazione via S2S prima di scaricare la ricevuta." }
+  }
+
+  if (riga.documento_protocollo_id) {
+    const esistente = await scaricaDocumento(riga.documento_protocollo_id)
+    if ("error" in esistente) return esistente
+    return { base64: esistente.base64, nomeFile: esistente.nomeFile }
+  }
+
+  const { data: impianto } = await supabase
+    .from("impianti")
+    .select("codice_impianto_f24")
+    .eq("id", riga.impianto_id)
+    .single()
+
+  // Preferiamo la data ufficiale riportata da ADM stessa (dataRegistrazione
+  // dell'Output) alla nostra ora locale — se non disponibile, fallback su
+  // quando abbiamo registrato l'ultimo esito noto.
+  const rigaRegistrazione = riga.data_registrazione_adm
+    ? riga.data_registrazione_adm
+    : riga.esito_aggiornato_at
+      ? `${new Date(riga.esito_aggiornato_at).toLocaleDateString("it-IT")} ${new Date(riga.esito_aggiornato_at).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })}`
+      : new Date().toLocaleDateString("it-IT")
+  const testo =
+    `IUT ${riga.iut}\n` +
+    `RICEVUTO ${rigaRegistrazione}\n` +
+    `${impianto?.codice_impianto_f24 ?? ""} ${riga.anno} - ${riga.periodo_riferimento}° semestre: ` +
+    `${riga.esito_descrizione ?? "Esito non ancora disponibile"}` +
+    `${riga.esito_codice ? ` (codice ${riga.esito_codice})` : ""}\n`
+
+  const nomeFile = `Ricevuta_${riga.iut}.txt`
+  const percorso = `impianti/${riga.impianto_id}/protocollo/${Date.now()}-${nomeFile}`
+
+  const { error: uploadError } = await supabase.storage
+    .from("documenti")
+    .upload(percorso, new Blob([testo], { type: "text/plain" }), { contentType: "text/plain" })
+  if (uploadError) return { error: uploadError.message }
+
+  const { data: documento, error: documentoError } = await supabase
+    .from("documenti")
+    .insert({
+      tipo: "protocollo",
+      storage_path: percorso,
+      nome_file: nomeFile,
+      mime_type: "text/plain",
+      dimensione_bytes: new Blob([testo]).size,
+      impianto_id: riga.impianto_id,
+      created_by: user.id,
+    })
+    .select("id")
+    .single()
+  if (documentoError) return { error: documentoError.message }
+
+  await supabase
+    .from("dichiarazioni_ee_semestrali")
+    .update({ documento_protocollo_id: documento.id })
+    .eq("id", dichiarazioneId)
+
+  revalidatePath(`/anagrafiche/impianti/${riga.impianto_id}`)
+
+  return { base64: Buffer.from(testo, "utf-8").toString("base64"), nomeFile }
 }
