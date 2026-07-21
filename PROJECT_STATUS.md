@@ -957,6 +957,58 @@ pushato su staging.
   verificare che il cliente riceva un PDF con le caselle mensili
   effettivamente vuote (non le letture già inserite).
 
+## Log invii email (da testare in staging)
+
+L'utente ha segnalato che l'email del "registro letture vuoto" non è
+arrivata (quella F24 sì), e ha chiesto — giustamente — una sezione per fare
+troubleshooting: prima non c'era **nessuna traccia** di un invio
+riuscito/fallito una volta chiusa la sessione dell'operatore, solo un toast
+che spariva. **Non è stato possibile diagnosticare la causa esatta di
+quell'episodio specifico** (nessun log da consultare per quell'invio) — il
+codice di `inviaRegistroLettureVuotoEmail` è strutturalmente identico a
+quello di `inviaEmailF24` (stesso `inviaEmail`, stesso pattern di
+allegato), quindi non è un bug di sbaglio di codice evidente; più probabile
+un rifiuto/bounce specifico lato Brevo per quell'indirizzo/invio (da
+verificare sul pannello Brevo → Statistiche/Log per quell'orario), oppure
+un errore avvenuto **prima** della chiamata email (es. dati mancanti
+sull'impianto) il cui toast di errore è passato inosservato. Da ora in poi,
+qualunque nuovo tentativo lascia una traccia verificabile.
+
+- **Nuova tabella `email_log`**
+  (`supabase/migrations/20260721100001_email_log.sql`, **non ancora
+  applicata in staging**): una riga per ogni chiamata a `inviaEmail`, con
+  tipo (`f24`/`ricevuta_dichiarazione`/`registro_letture_vuoto`/`altro`),
+  destinatario, oggetto, allegati (nomi file), esito (`inviata`/`errore`),
+  messaggio di errore se presente, riferimenti opzionali a cliente/impianto.
+- **Logging centralizzato in `lib/email/client.ts`**: `inviaEmail` ora
+  accetta un `contesto` opzionale (tipo + id cliente/impianto) e registra
+  **sempre** l'esito (successo o eccezione SMTP) tramite il client
+  service-role, prima di rilanciare l'errore al chiamante — il logging
+  stesso non blocca mai né maschera il vero esito (se il logging fallisce,
+  viene solo scritto in console). I tre punti di invio esistenti
+  (`inviaEmailF24`, `inviaRicevutaClienteEmail`,
+  `inviaRegistroLettureVuotoEmail`) passano ora il `contesto` appropriato —
+  centralizzato in un solo posto invece di duplicare la scrittura del log in
+  ogni azione, così un futuro quarto punto di invio lo eredita gratis.
+- **Importante per il troubleshooting futuro**: "inviata" nel log significa
+  solo che il server SMTP (Brevo) **ha accettato** il messaggio per la
+  consegna — non garantisce che sia arrivato in casella. Se un'email risulta
+  "inviata" qui ma il cliente non la riceve, il passo successivo è
+  controllare il pannello Brevo (Statistiche → Email → cerca per
+  destinatario/orario) per bounce, blocchi spam o problemi di
+  autenticazione del dominio mittente (`EMAIL_FROM`).
+- **UI**: nuova sezione "Log invii email"
+  (`components/impostazioni/log-email-section.tsx`) sotto `/impostazioni`,
+  tabella con le ultime 100 righe (data/ora, tipo, destinatario, oggetto,
+  allegati, esito — badge rosso con messaggio di errore se fallito). Nuova
+  azione `listaLogEmail` (`lib/actions/email-log.ts`).
+- **Verificato**: `npx tsc --noEmit`, `npm run test` (60 test, nessuno
+  nuovo), `npm run lint` puliti.
+- **Non ancora testato in staging**: applica la migration, poi riprova
+  l'invio del registro letture vuoto che non era arrivato — questa volta,
+  qualunque cosa succeda (successo o errore) comparirà nella nuova sezione
+  "Log invii email".
+
 ## Verifica esterna (Energix) su scadenze e periodicità
 
 Paolo ha girato due articoli di Energix
@@ -1089,6 +1141,11 @@ test + CA root ADM già caricati e verificati. Quello che resta:
 11. **Prova il nuovo test da `/impostazioni`** ("Test invio email al
    cliente") e il nuovo bottone "Invia registro vuoto al cliente" nella
    scheda impianto — vedi sezione dedicata sopra.
+12. **Applica la migration `20260721100001_email_log.sql`** e riprova
+   l'invio del registro letture vuoto che non era arrivato — controlla la
+   nuova sezione "Log invii email" in `/impostazioni` per vedere se risulta
+   "inviata" (allora il problema è lato Brevo: controlla il loro pannello
+   Statistiche per bounce/spam) o "errore" (messaggio esatto visibile lì).
 
 ## File utili per orientarsi
 
@@ -1112,4 +1169,5 @@ test + CA root ADM già caricati e verificati. Quello che resta:
 - Email finale al cliente (brief §5.8): `inviaRicevutaClienteEmail` in `lib/actions/dichiarazioni.ts`, UI in `components/impianti/dichiarazione-section.tsx`, migration `supabase/migrations/20260721090001_dichiarazione_email_cliente.sql`
 - Test invio email da /impostazioni: `listaDichiarazioniInviate` in `lib/actions/dichiarazioni.ts`, UI `components/impostazioni/test-email-cliente-section.tsx`
 - Registro letture vuoto via email: `inviaRegistroLettureVuotoEmail` in `lib/actions/registro-letture.ts`, UI in `components/impianti/registro-letture-section.tsx`
+- Log invii email: logging centralizzato in `lib/email/client.ts`, azione `lib/actions/email-log.ts`, UI `components/impostazioni/log-email-section.tsx`, migration `supabase/migrations/20260721100001_email_log.sql`
 - Setup locale: [`README.md`](./README.md)

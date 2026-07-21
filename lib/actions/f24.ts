@@ -236,6 +236,7 @@ export async function inviaEmailF24(f24GenerazioneId: string): Promise<ActionRes
           contentType: "application/pdf",
         },
       ],
+      contesto: { tipo: "f24", clienteId: generazione.cliente_id },
     })
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Errore nell'invio dell'email" }

@@ -715,6 +715,11 @@ export async function inviaRicevutaClienteEmail(dichiarazioneId: string): Promis
           contentType: "application/pdf",
         },
       ],
+      contesto: {
+        tipo: "ricevuta_dichiarazione",
+        clienteId: impianto.cliente_id,
+        impiantoId: riga.impianto_id,
+      },
     })
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Errore nell'invio dell'email" }

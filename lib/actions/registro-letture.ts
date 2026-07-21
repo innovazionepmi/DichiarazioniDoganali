@@ -222,6 +222,11 @@ export async function inviaRegistroLettureVuotoEmail(
           contentType: "application/pdf",
         },
       ],
+      contesto: {
+        tipo: "registro_letture_vuoto",
+        clienteId: impianto.cliente_id,
+        impiantoId,
+      },
     })
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Errore nell'invio dell'email" }
