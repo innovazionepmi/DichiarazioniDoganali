@@ -909,6 +909,54 @@ Paolo ha caricato i file restituiti da ADM.
   cliccare "Invia email al cliente" e verificare che il cliente riceva
   l'email con la ricevuta PDF allegata e la tabellina letture corretta.
 
+## Test invio email + registro letture vuoto via email (da testare in staging)
+
+Due richieste dell'utente subito dopo aver applicato la migration email e
+pushato su staging.
+
+- **Test invio email al cliente da `/impostazioni`**
+  (`components/impostazioni/test-email-cliente-section.tsx`, nuova azione
+  `listaDichiarazioniInviate` in `lib/actions/dichiarazioni.ts`): a
+  differenza della sandbox "Test invio ADM" sopra (dati completamente
+  fittizi, nessuna riga a DB), questa sezione **usa dati reali** — un menu a
+  tendina con tutte le dichiarazioni che hanno già un IUT (accolte da ADM),
+  e un bottone che richiama il vero `inviaRicevutaClienteEmail` — utile per
+  verificare che Brevo/SMTP funzioni davvero senza dover navigare fino alla
+  scheda impianto specifica. Stessa conferma esplicita (`window.confirm` con
+  l'indirizzo email mostrato) del bottone equivalente sulla scheda impianto.
+  Chiesto esplicitamente all'utente quale delle due letture del requisito
+  fosse corretta (email di test generica vs. collegamento al percorso
+  reale) — ha scelto la seconda.
+- **Registro letture vuoto via email** (brief §5.3: *"Il registro è in
+  bianco... Invio via email ai clienti a inizio anno"* — gap identificato
+  nell'analisi del brief, la versione già costruita in precedenza è invece
+  precompilata con le letture esistenti, utile per uso interno ma diversa
+  dal requisito originale): nuova azione
+  `inviaRegistroLettureVuotoEmail(impiantoId, anno)` in
+  `lib/actions/registro-letture.ts` — stessa intestazione/dati generali
+  dell'impianto di `generaRegistroLetture`, ma le 12 celle mensili di ogni
+  contatore sono **sempre vuote** (nessuna lettura precompilata, a
+  prescindere da cosa c'è già a DB), poi invia il PDF come allegato
+  all'email del referente cliente (`inviaEmail`, stesso wrapper Brevo).
+  Nuovo bottone "Invia registro vuoto al cliente" in
+  `components/impianti/registro-letture-section.tsx`, accanto a "Genera
+  registro" (che resta invariato: scarica la versione con le letture già
+  inserite, per uso interno di Paolo) — stessa conferma esplicita con
+  indirizzo email mostrato. `clienteEmail` passato come nuova prop sia a
+  `RegistroLettureSection` che a `DichiarazioneSection` dalla scheda
+  impianto (`page.tsx`, nuovo campo `referente_email` nel `select` del join
+  `cliente`).
+- **Verificato**: `npx tsc --noEmit`, `npm run test` (60 test, nessuno
+  nuovo — entrambe le funzioni sono orchestrazione, stesso motivo di
+  `inviaEmailF24`/`inviaRicevutaClienteEmail`), `npm run lint` puliti (solo
+  il warning noto pre-esistente su `data-table.tsx`).
+- **Non ancora testato in staging**: richiede login. Va provato: (1) da
+  `/impostazioni`, scegliere una dichiarazione con IUT e cliccare "Invia
+  email al cliente"; (2) da una scheda impianto con
+  `ha_registro_letture=true`, cliccare "Invia registro vuoto al cliente" e
+  verificare che il cliente riceva un PDF con le caselle mensili
+  effettivamente vuote (non le letture già inserite).
+
 ## Verifica esterna (Energix) su scadenze e periodicità
 
 Paolo ha girato due articoli di Energix
@@ -1034,10 +1082,13 @@ test + CA root ADM già caricati e verificati. Quello che resta:
    XML semestrale" — non farlo prima).
 9. (Opzionale) elimina l'utente di test `claude-test@example.com` da
    Supabase Auth Dashboard.
-10. **Applica la migration `20260721090001_dichiarazione_email_cliente.sql`**
-   e prova il nuovo bottone "Invia email al cliente" (brief §5.8, ultimo gap
-   del brief funzionale) su una dichiarazione con IUT valido e un cliente
-   con `referente_email` compilata — Brevo è già configurato su Vercel.
+10. ~~Applica la migration `20260721090001_dichiarazione_email_cliente.sql`~~
+   **Fatto** (confermato dall'utente il 2026-07-21). Prova il bottone "Invia
+   email al cliente" su una dichiarazione con IUT valido e un cliente con
+   `referente_email` compilata.
+11. **Prova il nuovo test da `/impostazioni`** ("Test invio email al
+   cliente") e il nuovo bottone "Invia registro vuoto al cliente" nella
+   scheda impianto — vedi sezione dedicata sopra.
 
 ## File utili per orientarsi
 
@@ -1059,4 +1110,6 @@ test + CA root ADM già caricati e verificati. Quello che resta:
 - Registro letture PDF: `lib/pdf/registro-letture-generator.ts`, `lib/actions/registro-letture.ts`, UI: `components/impianti/registro-letture-section.tsx`
 - Ricevuta invio S2S in PDF: `lib/pdf/ricevuta-invio-generator.ts` (usato da `scaricaRicevutaDichiarazione` in `lib/actions/dichiarazioni.ts`)
 - Email finale al cliente (brief §5.8): `inviaRicevutaClienteEmail` in `lib/actions/dichiarazioni.ts`, UI in `components/impianti/dichiarazione-section.tsx`, migration `supabase/migrations/20260721090001_dichiarazione_email_cliente.sql`
+- Test invio email da /impostazioni: `listaDichiarazioniInviate` in `lib/actions/dichiarazioni.ts`, UI `components/impostazioni/test-email-cliente-section.tsx`
+- Registro letture vuoto via email: `inviaRegistroLettureVuotoEmail` in `lib/actions/registro-letture.ts`, UI in `components/impianti/registro-letture-section.tsx`
 - Setup locale: [`README.md`](./README.md)

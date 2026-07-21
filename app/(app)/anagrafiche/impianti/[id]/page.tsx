@@ -132,7 +132,10 @@ export default async function ImpiantoDetailPage({
 
       {impianto.ha_registro_letture && (
         <>
-          <RegistroLettureSection impiantoId={id} />
+          <RegistroLettureSection
+            impiantoId={id}
+            clienteEmail={cliente?.referente_email ?? null}
+          />
           <Separator />
         </>
       )}

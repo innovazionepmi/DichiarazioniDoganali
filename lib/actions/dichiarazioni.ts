@@ -564,6 +564,59 @@ export async function scaricaRicevutaDichiarazione(
   return { base64: Buffer.from(pdfBytes).toString("base64"), nomeFile }
 }
 
+export type DichiarazioneInviata = {
+  id: string
+  anno: number
+  periodoRiferimento: 1 | 2
+  iut: string
+  impiantoNome: string
+  clienteRagioneSociale: string
+  clienteEmail: string | null
+  emailClienteInviataAt: string | null
+}
+
+// Elenco delle dichiarazioni già accolte da ADM (IUT presente), per la
+// sezione di test in /impostazioni: permette di verificare il percorso
+// reale "invia email al cliente" (inviaRicevutaClienteEmail) su una
+// dichiarazione vera già inviata via S2S, senza dover navigare fino alla
+// scheda impianto specifica.
+export async function listaDichiarazioniInviate(): Promise<DichiarazioneInviata[] | { error: string }> {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) return { error: "Non autenticato" }
+
+  const { data, error } = await supabase
+    .from("dichiarazioni_ee_semestrali")
+    .select(
+      "id, anno, periodo_riferimento, iut, email_cliente_inviata_at, impianto:impianto_id(nome_impianto, cliente:cliente_id(ragione_sociale, referente_email))"
+    )
+    .not("iut", "is", null)
+    .order("anno", { ascending: false })
+    .order("periodo_riferimento", { ascending: false })
+  if (error) return { error: error.message }
+
+  return (data ?? []).map((d) => {
+    const impianto = Array.isArray(d.impianto) ? d.impianto[0] : d.impianto
+    const cliente = impianto
+      ? Array.isArray(impianto.cliente)
+        ? impianto.cliente[0]
+        : impianto.cliente
+      : null
+    return {
+      id: d.id,
+      anno: d.anno,
+      periodoRiferimento: d.periodo_riferimento as 1 | 2,
+      iut: d.iut as string,
+      impiantoNome: impianto?.nome_impianto ?? "—",
+      clienteRagioneSociale: cliente?.ragione_sociale ?? "—",
+      clienteEmail: cliente?.referente_email ?? null,
+      emailClienteInviataAt: d.email_cliente_inviata_at,
+    }
+  })
+}
+
 // "Invia ricevute dichiarazione" (brief §5.8): compone e manda l'email al
 // cliente finale con la ricevuta (riusa scaricaRicevutaDichiarazione — la
 // genera se non esiste ancora, altrimenti riusa quella già archiviata) e
