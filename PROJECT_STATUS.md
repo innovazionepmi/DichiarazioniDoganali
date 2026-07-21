@@ -1004,10 +1004,32 @@ qualunque nuovo tentativo lascia una traccia verificabile.
   azione `listaLogEmail` (`lib/actions/email-log.ts`).
 - **Verificato**: `npx tsc --noEmit`, `npm run test` (60 test, nessuno
   nuovo), `npm run lint` puliti.
-- **Non ancora testato in staging**: applica la migration, poi riprova
-  l'invio del registro letture vuoto che non era arrivato — questa volta,
-  qualunque cosa succeda (successo o errore) comparirà nella nuova sezione
-  "Log invii email".
+- **Verificato in staging dall'utente**: era solo un ritardo di consegna
+  lato Brevo, non un errore — l'email del registro vuoto è arrivata poco
+  dopo. Nessun bug da correggere. La sezione di log resta comunque utile
+  per la prossima volta che càpita un dubbio simile.
+
+## Prossimo tema: import dati storici (clienti/impianti/contatori/letture 2025) — in attesa di Paolo
+
+Il brief (§Fase 1/§5.1) prevedeva esplicitamente *"import dagli Excel
+esistenti"* per l'anagrafica (clienti/impianti/partner/contatori), oltre
+all'onboarding da licenza PDF già costruito — un gap reale, mai chiuso,
+perché finora l'inserimento è stato manuale/da licenza PDF impianto per
+impianto. Con ~86 impianti da censire, l'import massivo resta necessario
+prima di andare a regime.
+
+**Nessun codice da scrivere ora**: l'utente vuole prima sentire Paolo
+Rinaldin per capire cosa può fornire — che formato di file (Excel? CSV?
+quanti fogli/file diversi?), quali dati sono già strutturati vs. da pulire
+a mano, e se ha anche i **valori letture 2025** da riportare (non solo
+anagrafica clienti/impianti/contatori). Il piano di importazione (mapping
+colonne, gestione duplicati/aggiornamento vs. creazione, validazione,
+UI di anteprima prima di scrivere — stesso pattern già usato per
+l'onboarding da licenza PDF e l'import PDF/screenshot letture) si scrive
+**dopo** aver visto un file di esempio reale, non prima.
+
+**Prossimo passo**: quando l'utente ha sentito Paolo e ha un file di
+esempio, riprendere da qui.
 
 ## Verifica esterna (Energix) su scadenze e periodicità
 
@@ -1141,11 +1163,10 @@ test + CA root ADM già caricati e verificati. Quello che resta:
 11. **Prova il nuovo test da `/impostazioni`** ("Test invio email al
    cliente") e il nuovo bottone "Invia registro vuoto al cliente" nella
    scheda impianto — vedi sezione dedicata sopra.
-12. **Applica la migration `20260721100001_email_log.sql`** e riprova
-   l'invio del registro letture vuoto che non era arrivato — controlla la
-   nuova sezione "Log invii email" in `/impostazioni` per vedere se risulta
-   "inviata" (allora il problema è lato Brevo: controlla il loro pannello
-   Statistiche per bounce/spam) o "errore" (messaggio esatto visibile lì).
+12. ~~Applica la migration `20260721100001_email_log.sql`~~ **Fatto** —
+   verificato che era solo un ritardo di consegna (email arrivata poco
+   dopo), non un errore. La sezione "Log invii email" in `/impostazioni`
+   resta comunque disponibile per dubbi futuri.
 
 ## File utili per orientarsi
 
