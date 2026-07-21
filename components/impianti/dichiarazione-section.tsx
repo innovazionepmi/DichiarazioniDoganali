@@ -34,6 +34,7 @@ import {
   caricaEsitoDichiarazione,
   controllaStatoDichiarazioneReale,
   scaricaRicevutaDichiarazione,
+  inviaRicevutaClienteEmail,
 } from "@/lib/actions/dichiarazioni"
 import { scaricaDocumento } from "@/lib/actions/documenti"
 import { InvioDichiarazioneDialog } from "@/components/impianti/invio-dichiarazione-dialog"
@@ -56,6 +57,7 @@ export interface DichiarazioneStorico {
   esito_codice: string | null
   esito_descrizione: string | null
   esito_aggiornato_at: string | null
+  email_cliente_inviata_at: string | null
 }
 
 function scaricaBase64(base64: string, nomeFile: string, mimeType: string) {
@@ -76,9 +78,11 @@ function scaricaBase64(base64: string, nomeFile: string, mimeType: string) {
 export function DichiarazioneSection({
   impiantoId,
   dichiarazioni,
+  clienteEmail,
 }: {
   impiantoId: string
   dichiarazioni: DichiarazioneStorico[]
+  clienteEmail: string | null
 }) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
@@ -103,6 +107,25 @@ export function DichiarazioneSection({
         return
       }
       toast.success(`Stato: ${result.descrizione}`)
+      router.refresh()
+    })
+  }
+
+  function handleInviaEmailCliente(dichiarazioneId: string) {
+    if (!clienteEmail) {
+      toast.error("Il cliente non ha un'email del referente impostata in anagrafica")
+      return
+    }
+    if (!window.confirm(`Inviare la ricevuta al cliente all'indirizzo ${clienteEmail}?`)) {
+      return
+    }
+    startTransition(async () => {
+      const result = await inviaRicevutaClienteEmail(dichiarazioneId)
+      if (result?.error) {
+        toast.error(result.error)
+        return
+      }
+      toast.success("Email inviata al cliente")
       router.refresh()
     })
   }
@@ -304,7 +327,25 @@ export function DichiarazioneSection({
                           Scarica ricevuta
                         </Button>
                       )}
+                      {d.iut && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={pending}
+                          onClick={() => handleInviaEmailCliente(d.id)}
+                        >
+                          {d.email_cliente_inviata_at
+                            ? "Reinvia email al cliente"
+                            : "Invia email al cliente"}
+                        </Button>
+                      )}
                     </div>
+                    {d.email_cliente_inviata_at && (
+                      <div className="mt-1 text-xs text-muted-foreground">
+                        Email inviata il{" "}
+                        {new Date(d.email_cliente_inviata_at).toLocaleDateString("it-IT")}
+                      </div>
+                    )}
                   </TableCell>
                 </TableRow>
               ))}

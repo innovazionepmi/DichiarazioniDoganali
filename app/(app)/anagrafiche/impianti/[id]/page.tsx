@@ -27,7 +27,7 @@ export default async function ImpiantoDetailPage({
   ] = await Promise.all([
     supabase
       .from("impianti")
-      .select("*, cliente:cliente_id(id, ragione_sociale)")
+      .select("*, cliente:cliente_id(id, ragione_sociale, referente_email)")
       .eq("id", id)
       .single(),
     supabase
@@ -48,7 +48,7 @@ export default async function ImpiantoDetailPage({
     supabase
       .from("dichiarazioni_ee_semestrali")
       .select(
-        "id, anno, periodo_riferimento, stato, documento_xml_id, documento_pdf_id, documento_protocollo_id, data_generazione, data_invio, iut, esito_codice, esito_descrizione, esito_aggiornato_at"
+        "id, anno, periodo_riferimento, stato, documento_xml_id, documento_pdf_id, documento_protocollo_id, data_generazione, data_invio, iut, esito_codice, esito_descrizione, esito_aggiornato_at, email_cliente_inviata_at"
       )
       .eq("impianto_id", id)
       .order("anno", { ascending: false })
@@ -122,7 +122,11 @@ export default async function ImpiantoDetailPage({
 
       <Separator />
 
-      <DichiarazioneSection impiantoId={id} dichiarazioni={dichiarazioni ?? []} />
+      <DichiarazioneSection
+        impiantoId={id}
+        dichiarazioni={dichiarazioni ?? []}
+        clienteEmail={cliente?.referente_email ?? null}
+      />
 
       <Separator />
 

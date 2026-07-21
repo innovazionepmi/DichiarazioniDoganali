@@ -371,8 +371,17 @@ vendesse a terzi, andrà esteso (fuori scope per ora — vedi piano salvato in
 - **Fuori scope per questo incremento** (vedi piano per i dettagli): Quadro
   C/J/L/M/Q/S/N/T/Allegati (solo se un cliente vende a terzi), logica
   multi-ambito (non serve per Quadro A/G, che non hanno raggruppamento per
-  ambito — entra in gioco solo con J/L/M/Q/S), collegamento automatico col
-  tabellone `/tracking`.
+  ambito — entra in gioco solo con J/L/M/Q/S).
+- **Collegamento tabellone `/tracking` ↔ invio reale — deciso di rimandare
+  (2026-07-21)**: oggi `inviaDichiarazioneReale` non tocca mai
+  `tracking_dichiarazioni` — sono due sistemi separati, la spunta sul
+  tabellone resta manuale (`toggleDichiarazione`) anche dopo un invio S2S
+  riuscito. **Decisione esplicita dell'utente**: collegare la spunta
+  automatica (impostarla quando l'invio reale ha esito positivo) solo
+  **quando l'invio in produzione sarà definitivamente operativo** (endpoint
+  ADM pubblicato + primo invio reale riuscito), non prima — evita di
+  costruire quel collegamento contro un flusso ancora bloccato
+  dall'endpoint di produzione non pubblicato.
 - **Non ancora testato in staging**: build/lint/test passano (33 test
   totali), ma la verifica end-to-end nel browser richiede login (nessuna
   credenziale disponibile in sessione) — va provato dall'utente dopo aver
@@ -847,6 +856,59 @@ il codice giusto per il distributore nel Quadro G).
   un registro letture su un impianto con `ha_registro_letture=true` e
   scaricando una ricevuta dopo un invio S2S riuscito.
 
+## Email finale al cliente (brief §5.8, da testare in staging)
+
+Ultimo gap del brief funzionale rimasto aperto dopo il confronto punto-per-
+punto con `PROMPT DI SVILUPPO Jouletec1.txt` (fatto su richiesta dell'utente:
+"hai ancora il brief iniziale? ci sono aree che non abbiamo ancora
+coperto?"). Il brief (§5.8) chiede un bottone che compone e invia al cliente
+un'email con dichiarazione+ricevuta+tabellina letture del periodo, dopo che
+Paolo ha caricato i file restituiti da ADM.
+
+- **Migration** `20260721090001_dichiarazione_email_cliente.sql`: aggiunge
+  `email_cliente_inviata_at timestamptz` a `dichiarazioni_ee_semestrali` —
+  distinta da `data_invio` (che traccia l'invio S2S ad ADM): qui si traccia
+  l'invio dell'email al cliente finale, un passaggio successivo e separato,
+  che può avvenire anche più volte (reinvio). **Non ancora applicata in
+  staging** — va eseguita a mano via SQL Editor come le precedenti.
+- **`inviaRicevutaClienteEmail`** (`lib/actions/dichiarazioni.ts`): riusa
+  `scaricaRicevutaDichiarazione` (genera la ricevuta PDF se non esiste
+  ancora, altrimenti quella già archiviata — nessuna duplicazione di
+  logica) e l'XML già archiviato (`parseDichiarazioneEeSemestraleXml`) per
+  costruire una tabellina HTML con le letture di fine mese (Quadro A/G) da
+  riportare sul registro cartaceo. Guard espliciti: niente IUT → errore
+  "invia prima via S2S"; cliente senza `referente_email` in anagrafica →
+  errore chiaro (stesso pattern di `inviaEmailF24`). Invio via
+  `inviaEmail` (`lib/email/client.ts`, wrapper SMTP generico compatibile
+  Brevo) con la ricevuta PDF in allegato. Su successo, aggiorna
+  `email_cliente_inviata_at`.
+- **UI** (`components/impianti/dichiarazione-section.tsx`): nuovo bottone
+  "Invia email al cliente" (o "Reinvia..." se già inviata, con data
+  visibile sotto), visibile solo quando lo IUT è presente (dichiarazione
+  già inviata/accolta via S2S). Conferma esplicita via `window.confirm` con
+  l'indirizzo email destinatario mostrato prima dell'invio — mai
+  automatico, coerente con "Paolo preme un bottone" del brief e con lo
+  stesso pattern di conferma esplicita usato altrove nell'app (F24 "OK
+  invio"). L'email del referente (`clienti.referente_email`) è passata come
+  prop `clienteEmail` dalla pagina impianto (nuovo campo nel `select` del
+  join `cliente`).
+- **Credenziali Brevo**: l'utente ha generato la **SMTP key** di Brevo
+  (dashboard → SMTP & API → tab SMTP, non la API Key generica — le due non
+  sono intercambiabili con `nodemailer`) e impostato le variabili
+  `SMTP_HOST`/`SMTP_USER`/`SMTP_PASSWORD`/`EMAIL_FROM` direttamente su
+  Vercel Project Settings (confermato dall'utente il 2026-07-21) — mai
+  condivise in chat, come da policy di sicurezza del progetto (CLAUDE.md:
+  "Mai salvare API key, token o credenziali nel repo").
+- **Verificato**: `npx tsc --noEmit`, `npm run test` (60 test, nessuno
+  nuovo — l'azione è orchestrazione senza logica pura isolabile, stesso
+  motivo di `inviaEmailF24`) e `npm run lint` puliti.
+- **Non ancora testato in staging**: richiede login + una dichiarazione con
+  IUT valido + un cliente con `referente_email` compilata. Va provato
+  dall'utente dopo aver applicato la migration e configurato Brevo (già
+  fatto lato Vercel): generare/inviare una dichiarazione via S2S, poi
+  cliccare "Invia email al cliente" e verificare che il cliente riceva
+  l'email con la ricevuta PDF allegata e la tabellina letture corretta.
+
 ## Verifica esterna (Energix) su scadenze e periodicità
 
 Paolo ha girato due articoli di Energix
@@ -965,8 +1027,17 @@ test + CA root ADM già caricati e verificati. Quello che resta:
    anche il **certificato client di produzione** (per ora ha solo il CA
    root di quell'ambiente) — stesso percorso PUDM già usato per quello di
    test.
+8bis. **Quando l'invio in produzione sarà definitivamente operativo**
+   (endpoint ADM pubblicato + primo invio reale riuscito): collegare la
+   spunta automatica di `/tracking` a `inviaDichiarazioneReale` (decisione
+   esplicita dell'utente il 2026-07-21, vedi sezione "Fase 4, dichiarazione
+   XML semestrale" — non farlo prima).
 9. (Opzionale) elimina l'utente di test `claude-test@example.com` da
    Supabase Auth Dashboard.
+10. **Applica la migration `20260721090001_dichiarazione_email_cliente.sql`**
+   e prova il nuovo bottone "Invia email al cliente" (brief §5.8, ultimo gap
+   del brief funzionale) su una dichiarazione con IUT valido e un cliente
+   con `referente_email` compilata — Brevo è già configurato su Vercel.
 
 ## File utili per orientarsi
 
@@ -987,4 +1058,5 @@ test + CA root ADM già caricati e verificati. Quello che resta:
 - Invio S2S reale (collegato alla dichiarazione vera): `parseDichiarazioneEeSemestraleXml` in `lib/xml/dichiarazione-ee-semestrale.ts`, azioni `recuperaRiepilogoDichiarazione`/`inviaDichiarazioneReale`/`controllaStatoDichiarazioneReale`/`scaricaRicevutaDichiarazione` in `lib/actions/dichiarazioni.ts`, UI: `components/impianti/invio-dichiarazione-dialog.tsx` (schermata di riepilogo pre-invio), migration `supabase/migrations/20260720120001_dichiarazione_invio_reale.sql`
 - Registro letture PDF: `lib/pdf/registro-letture-generator.ts`, `lib/actions/registro-letture.ts`, UI: `components/impianti/registro-letture-section.tsx`
 - Ricevuta invio S2S in PDF: `lib/pdf/ricevuta-invio-generator.ts` (usato da `scaricaRicevutaDichiarazione` in `lib/actions/dichiarazioni.ts`)
+- Email finale al cliente (brief §5.8): `inviaRicevutaClienteEmail` in `lib/actions/dichiarazioni.ts`, UI in `components/impianti/dichiarazione-section.tsx`, migration `supabase/migrations/20260721090001_dichiarazione_email_cliente.sql`
 - Setup locale: [`README.md`](./README.md)

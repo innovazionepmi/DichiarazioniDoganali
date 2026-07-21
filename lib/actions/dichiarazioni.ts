@@ -19,6 +19,12 @@ import {
   type EsitoControlloStato,
 } from "@/lib/adm/soap-client"
 import { generaRicevutaInvioPdf } from "@/lib/pdf/ricevuta-invio-generator"
+import { inviaEmail } from "@/lib/email/client"
+
+const MESI_LABEL = [
+  "Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno",
+  "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre",
+]
 
 export type ActionResult = { error?: string } | void
 
@@ -556,4 +562,116 @@ export async function scaricaRicevutaDichiarazione(
   revalidatePath(`/anagrafiche/impianti/${riga.impianto_id}`)
 
   return { base64: Buffer.from(pdfBytes).toString("base64"), nomeFile }
+}
+
+// "Invia ricevute dichiarazione" (brief §5.8): compone e manda l'email al
+// cliente finale con la ricevuta (riusa scaricaRicevutaDichiarazione — la
+// genera se non esiste ancora, altrimenti riusa quella già archiviata) e
+// una tabellina con le letture di fine mese del periodo, che il cliente
+// riporterà sul proprio registro cartaceo. Mai automatico: parte solo dal
+// click esplicito sul bottone dedicato in UI (stesso pattern di
+// inviaEmailF24).
+export async function inviaRicevutaClienteEmail(dichiarazioneId: string): Promise<ActionResult> {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) return { error: "Non autenticato" }
+
+  const { data: riga, error } = await supabase
+    .from("dichiarazioni_ee_semestrali")
+    .select("impianto_id, anno, periodo_riferimento, iut, documento_xml_id")
+    .eq("id", dichiarazioneId)
+    .single()
+  if (error || !riga) return { error: error?.message ?? "Dichiarazione non trovata" }
+  if (!riga.iut) {
+    return { error: "Invia prima la dichiarazione via S2S: senza esito non c'è nulla da mandare al cliente." }
+  }
+  if (!riga.documento_xml_id) return { error: "XML non disponibile per questa dichiarazione." }
+
+  const { data: impianto, error: impiantoError } = await supabase
+    .from("impianti")
+    .select("nome_impianto, cliente_id")
+    .eq("id", riga.impianto_id)
+    .single()
+  if (impiantoError || !impianto) return { error: impiantoError?.message ?? "Impianto non trovato" }
+
+  const { data: cliente, error: clienteError } = await supabase
+    .from("clienti")
+    .select("ragione_sociale, referente_email")
+    .eq("id", impianto.cliente_id)
+    .single()
+  if (clienteError || !cliente) return { error: clienteError?.message ?? "Cliente non trovato" }
+  if (!cliente.referente_email) {
+    return { error: "Il cliente non ha un'email del referente impostata in anagrafica." }
+  }
+
+  const ricevuta = await scaricaRicevutaDichiarazione(dichiarazioneId)
+  if ("error" in ricevuta) return ricevuta
+
+  const xmlResult = await scaricaDocumento(riga.documento_xml_id)
+  if ("error" in xmlResult) return xmlResult
+
+  let dati: DichiarazioneEeSemestraleInput
+  try {
+    dati = parseDichiarazioneEeSemestraleXml(Buffer.from(xmlResult.base64, "base64").toString("utf-8"))
+  } catch {
+    return { error: "L'XML archiviato non è leggibile." }
+  }
+
+  const righeTabellina = dati.quadroA.flatMap((mese) =>
+    mese.contatori.map((c) => ({
+      mese: MESI_LABEL[mese.numMese - 1],
+      matricola: c.matricola,
+      lettura: c.lettA.toFixed(2),
+    }))
+  )
+  const righeTabellinaHtml = righeTabellina
+    .map(
+      (r) =>
+        `<tr><td style="padding:4px 8px;border:1px solid #ddd;">${r.mese}</td><td style="padding:4px 8px;border:1px solid #ddd;">${r.matricola}</td><td style="padding:4px 8px;border:1px solid #ddd;">${r.lettura}</td></tr>`
+    )
+    .join("")
+
+  const html = `
+    <p>Gentile cliente,</p>
+    <p>in allegato la ricevuta della dichiarazione doganale di energia elettrica per il periodo
+    <strong>${riga.anno} — ${riga.periodo_riferimento}° semestre</strong> (IUT ${riga.iut}).</p>
+    <p>Di seguito le letture di fine mese da riportare sul registro cartaceo:</p>
+    <table style="border-collapse:collapse;font-size:14px;">
+      <thead>
+        <tr>
+          <th style="padding:4px 8px;border:1px solid #ddd;text-align:left;">Mese</th>
+          <th style="padding:4px 8px;border:1px solid #ddd;text-align:left;">Matricola</th>
+          <th style="padding:4px 8px;border:1px solid #ddd;text-align:left;">Lettura</th>
+        </tr>
+      </thead>
+      <tbody>${righeTabellinaHtml}</tbody>
+    </table>
+  `
+
+  try {
+    await inviaEmail({
+      to: cliente.referente_email,
+      subject: `Dichiarazione energia elettrica ${riga.anno} — ${riga.periodo_riferimento}° semestre — ${cliente.ragione_sociale}`,
+      html,
+      attachments: [
+        {
+          filename: ricevuta.nomeFile,
+          content: Buffer.from(ricevuta.base64, "base64"),
+          contentType: "application/pdf",
+        },
+      ],
+    })
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Errore nell'invio dell'email" }
+  }
+
+  const { error: updateError } = await supabase
+    .from("dichiarazioni_ee_semestrali")
+    .update({ email_cliente_inviata_at: new Date().toISOString() })
+    .eq("id", dichiarazioneId)
+  if (updateError) return { error: updateError.message }
+
+  revalidatePath(`/anagrafiche/impianti/${riga.impianto_id}`)
 }
