@@ -86,6 +86,12 @@ export default async function TrackingPage({
       </p>
       <PartnerFilter partnerOptions={partnerOptions ?? []} />
       <TrackingTable
+        // Forza il remount (e quindi il reset dello stato locale editabile:
+        // spunte + importi) quando cambia l'anno o i dati sottostanti —
+        // stesso bug/fix già visto per LettureTable: senza `key`, React
+        // riusa l'istanza e lo stato interno resta quello del vecchio anno
+        // anche se i props cambiano.
+        key={`${anno}-${JSON.stringify(dichiarazioni)}-${JSON.stringify(fatture)}`}
         anno={anno}
         clienti={clienti ?? []}
         impianti={impianti ?? []}
