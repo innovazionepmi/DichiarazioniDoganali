@@ -333,7 +333,15 @@ vendesse a terzi, andrà esteso (fuori scope per ora — vedi piano salvato in
   vedi sezione "Fase 4, invio S2S" più sotto per il piano completo. Solo la
   **dichiarazione semestrale** per ora (annuale rimandata esplicitamente:
   l'utente si aspetta possibili aggiornamenti documentali prima della
-  prossima scadenza annuale).
+  prossima scadenza annuale). **Materiali già disponibili per quando si
+  riprende** (verificato 2026-07-27, cartella locale dell'utente
+  `OneDrive/.../Webservice2026/Dichiarazione-annuale-2026/`): XSD annuale
+  (`EnergiaElettrica_2021.xsd`, schema "EnergiaElettrica", invariato dal
+  2021 — root diverso dal semestrale: niente `Periodo`, ha `Anno` e in più
+  i quadri di liquidazione C/E/I/J/M/K/P/Q/X/R/S/EC/EF) e un **WSDL reale
+  del servizio annuale** (`EnergiaElettricaService.wsdl` — stesso schema di
+  naming del semestrale, `{Nome}Web/services/{Nome}`, ma indirizzo
+  placeholder `localhost`, quindi non rivela endpoint di test/produzione).
 - **Schema già pronto dalla Fase 1** (nessuna migration su `clienti`/`impianti`
   necessaria): `impianti.codice_impianto_f24` = CodDitta del frontespizio
   (per licenza/impianto, non per cliente), `impianti.codice_distributore_zona`
@@ -1117,12 +1125,29 @@ mostra la riga "Lettura iniziale" (editabile), le etichette mese con giorno,
 e la colonna "Tot." per contatore; (4) `/tracking` permette di inserire un
 importo fattura per cliente/anno.
 
-**Punto aperto emerso dalla trascrizione, non ancora chiarito** (non
-azionabile ora): durante un test in ambiente di addestramento è comparso un
-avviso relativo al "Quadro L" — resta da capire con ADM/Paolo se il
-recupero di questo tipo di esiti può essere automatizzato via software o se
-debba restare manuale tramite MONET. Nessuna azione nostra necessaria finché
-non si chiarisce.
+**Punto aperto emerso dalla trascrizione — parzialmente chiarito
+(2026-07-27)**: durante un test in ambiente di addestramento è comparso un
+avviso relativo al "Quadro L". Controllato l'XSD semestrale reale
+(`EnergiaElettricaSemestrale.xsd`, dai file forniti dall'utente in
+`OneDrive/.../Webservice2026/Dichiarazione-semestrale-prova/Struttura XSD
+dei messaggi EE.zip`): **il Quadro L esiste anche nello schema semestrale**
+(`<xs:element name="L" type="UsiEsentiType" minOccurs="0" .../>` — "Usi
+Esenti"), **opzionale**. Il nostro generatore (`lib/xml/
+dichiarazione-ee-semestrale.ts`) non lo popola (solo Dich/Periodo/A/G,
+coerente con la conclusione già in memoria che per il profilo "produzione
+rinnovabili uso proprio esente" bastano A+G) — l'avviso è probabilmente solo
+informativo, dato che lo stesso identico profilo di dichiarazione (senza L)
+ha già raggiunto il miglior esito possibile (**codice 200**) nel test con
+CodDitta reale. **Non ancora verificato**: il testo esatto dell'avviso e se
+serve davvero compilare L in qualche caso specifico (es. se in futuro un
+cliente vende energia a terzi) — il manuale operativo semestrale
+(`MANUALE_OPERATIVO_DICHIARAZIONI_EE_SEMESTRALI__PROVA.pdf`, versione
+addestramento) è solo procedurale/tecnico (endpoint, autenticazione, firma),
+non descrive il contenuto sostanziale dei singoli quadri — quello sta
+nell'Allegato 4/Circolare già consultati (`project_xml_dogane_ricerca.md`).
+Resta anche da capire se il recupero di questo tipo di esiti/avvisi può
+essere automatizzato via software o se debba restare manuale tramite MONET.
+Nessuna azione di codice necessaria finché non si chiarisce con Paolo/ADM.
 
 ### Riepilogo: dove viene usata la costante K nei calcoli
 
