@@ -14,12 +14,14 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { upsertLetture } from "@/lib/actions/letture"
+import { upsertLetture, aggiornaLetturaIniziale } from "@/lib/actions/letture"
 import {
   autoconsumoMensile,
   autoconsumoNegativo,
+  letturaRegistro,
   ordineGrandezzaPlausibile,
   riconciliazione,
+  ultimoGiornoMese,
 } from "@/lib/calc/registro"
 
 const MESI = [
@@ -100,6 +102,29 @@ export function LettureTable({
     costruisciGriglia(lettureEsistenti, anno)
   )
 
+  // "Lettura iniziale" (fix richiesto da Paolo): normalmente è la lettura di
+  // registro calcolata al 31/12 dell'anno precedente, a partire dallo
+  // storico completo del contatore — se non c'è storico (contatore nuovo
+  // subentrato ad anno iniziato), letturaRegistro ritorna semplicemente
+  // lettura_iniziale così com'è, che l'operatore può correggere a mano.
+  function calcolaLetturaInizialeDefault(c: ContatoreLetture): number {
+    const storia = lettureEsistenti
+      .filter((l) => l.contatore_id === c.id)
+      .map((l) => ({
+        anno: l.periodo_anno,
+        mese: l.periodo_mese,
+        valore_periodo: (l.valore_f1 ?? 0) + (l.valore_f2 ?? 0) + (l.valore_f3 ?? 0),
+      }))
+    return letturaRegistro(c.lettura_iniziale, c.costante_k ?? 1, storia, {
+      anno: anno - 1,
+      mese: 12,
+    })
+  }
+
+  const [letturaInizialeInput, setLetturaInizialeInput] = useState<Record<string, string>>(() =>
+    Object.fromEntries(contatori.map((c) => [c.id, String(calcolaLetturaInizialeDefault(c))]))
+  )
+
   function setCella(contatoreId: string, mese: number, campo: keyof Cella, value: string) {
     setGriglia((prev) => ({
       ...prev,
@@ -124,6 +149,7 @@ export function LettureTable({
   // `valorePeriodo` (chiude su `griglia`, che cambia ad ogni input).
   const righeMensili = MESI.map((nome, index) => {
     const mese = index + 1
+    const nomeConGiorno = `${nome} ${ultimoGiornoMese(anno, mese)}`
     const produzioneTot = produzioneContatori.reduce(
       (acc, c) => acc + valorePeriodo(c.id, mese),
       0
@@ -135,7 +161,7 @@ export function LettureTable({
     const autoconsumo = autoconsumoMensile(produzioneTot, immissioneTot)
     return {
       mese,
-      nome,
+      nome: nomeConGiorno,
       produzioneTot,
       immissioneTot,
       autoconsumo,
@@ -183,10 +209,22 @@ export function LettureTable({
       const result = await upsertLetture(impiantoId, righe)
       if (result?.error) {
         toast.error(result.error)
-      } else {
-        toast.success("Letture salvate")
-        router.refresh()
+        return
       }
+
+      for (const c of contatori) {
+        const valoreInput = numero(letturaInizialeInput[c.id] ?? "")
+        const valoreDefault = calcolaLetturaInizialeDefault(c)
+        if (Math.abs(valoreInput - valoreDefault) < 0.0001) continue
+        const risultatoLI = await aggiornaLetturaIniziale(impiantoId, c.id, valoreInput)
+        if (risultatoLI?.error) {
+          toast.error(`Lettura iniziale ${c.matricola}: ${risultatoLI.error}`)
+          return
+        }
+      }
+
+      toast.success("Letture salvate")
+      router.refresh()
     })
   }
 
@@ -198,7 +236,7 @@ export function LettureTable({
             <TableRow>
               <TableHead className="sticky left-0 bg-background">Mese</TableHead>
               {contatori.map((c) => (
-                <TableHead key={c.id} colSpan={3} className="text-center">
+                <TableHead key={c.id} colSpan={4} className="text-center">
                   <div className="flex flex-col items-center gap-1">
                     <span className="font-medium">{c.matricola}</span>
                     <Badge variant="outline">
@@ -218,6 +256,7 @@ export function LettureTable({
                   <TableHead className="text-center text-xs">F1</TableHead>
                   <TableHead className="text-center text-xs">F2</TableHead>
                   <TableHead className="text-center text-xs">F3</TableHead>
+                  <TableHead className="text-center text-xs">Tot.</TableHead>
                 </Fragment>
               ))}
               <TableHead />
@@ -226,6 +265,26 @@ export function LettureTable({
             </TableRow>
           </TableHeader>
           <TableBody>
+            <TableRow className="bg-muted/30">
+              <TableCell className="sticky left-0 bg-muted/30 font-medium">
+                Lettura iniziale
+              </TableCell>
+              {contatori.map((c) => (
+                <TableCell key={c.id} colSpan={4} className="p-1">
+                  <Input
+                    className="h-8 w-28 text-right"
+                    inputMode="decimal"
+                    value={letturaInizialeInput[c.id] ?? ""}
+                    onChange={(e) =>
+                      setLetturaInizialeInput((prev) => ({ ...prev, [c.id]: e.target.value }))
+                    }
+                  />
+                </TableCell>
+              ))}
+              <TableCell />
+              <TableCell />
+              <TableCell />
+            </TableRow>
             {righeMensili.map((riga) => (
               <TableRow key={riga.mese} className={riga.negativo ? "bg-destructive/5" : undefined}>
                 <TableCell className="sticky left-0 bg-background font-medium">
@@ -258,6 +317,9 @@ export function LettureTable({
                           value={cella.f3}
                           onChange={(e) => setCella(c.id, riga.mese, "f3", e.target.value)}
                         />
+                      </TableCell>
+                      <TableCell className="text-right text-sm tabular-nums text-muted-foreground">
+                        {valorePeriodo(c.id, riga.mese).toLocaleString("it-IT")}
                       </TableCell>
                     </Fragment>
                   )

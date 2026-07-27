@@ -55,7 +55,7 @@ export default async function TrackingPage({
     clienteIds.length > 0
       ? supabase
           .from("tracking_fatture")
-          .select("cliente_id, emessa")
+          .select("cliente_id, emessa, importo")
           .in("cliente_id", clienteIds)
           .eq("anno", anno)
       : Promise.resolve({ data: [] as never[] }),

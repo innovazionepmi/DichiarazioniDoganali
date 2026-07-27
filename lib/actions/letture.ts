@@ -59,6 +59,34 @@ export async function upsertLetture(
   revalidatePath(`/letture/${impiantoId}`)
 }
 
+// "Lettura iniziale" (riga in testa alla tabella letture, richiesta da
+// Paolo): normalmente coincide con la lettura di registro calcolata al
+// 31/12 dell'anno precedente (letturaRegistro con lo storico esistente),
+// ma per un contatore nuovo subentrato ad anno iniziato non c'è storico —
+// l'operatore deve poterla impostare a mano. Aggiorna direttamente
+// `contatori.lettura_iniziale`: sicuro perché la riga si mostra editabile
+// solo quando non c'è storico precedente da alterare retroattivamente (un
+// contatore con anni di letture reali mostra già il valore corretto,
+// calcolato, senza bisogno di modifiche).
+export async function aggiornaLetturaIniziale(
+  impiantoId: string,
+  contatoreId: string,
+  valore: number
+): Promise<ActionResult> {
+  if (!Number.isFinite(valore)) return { error: "Valore non valido" }
+
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from("contatori")
+    .update({ lettura_iniziale: valore })
+    .eq("id", contatoreId)
+    .eq("impianto_id", impiantoId)
+
+  if (error) return { error: error.message }
+
+  revalidatePath(`/letture/${impiantoId}`)
+}
+
 export type RigaDiffPdf = {
   contatoreId: string
   periodoMese: number

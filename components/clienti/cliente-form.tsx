@@ -129,19 +129,10 @@ export function ClienteForm({
               </FormItem>
             )}
           />
-          <FormField
-            control={form.control}
-            name="codice_licenza"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Codice licenza (codice ditta)</FormLabel>
-                <FormControl>
-                  <Input {...field} />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
+          {/* Niente campo "codice licenza" qui: un cliente può avere più
+              impianti con codici diversi, resta solo su ogni impianto
+              (codice_impianto_f24) — era un doppione, tolto su richiesta di
+              Paolo. */}
           <FormField
             control={form.control}
             name="partner_id"

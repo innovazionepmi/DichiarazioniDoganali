@@ -22,6 +22,12 @@ export function mesePrecedente({ anno, mese }: Periodo): Periodo {
   return mese === 1 ? { anno: anno - 1, mese: 12 } : { anno, mese: mese - 1 }
 }
 
+// Ultimo giorno di un mese (1-12), tenendo conto degli anni bisestili per
+// febbraio — usato per mostrare "Gennaio 31" invece di solo "Gennaio".
+export function ultimoGiornoMese(anno: number, mese: number): number {
+  return new Date(anno, mese, 0).getDate()
+}
+
 // Lettura progressiva di registro (÷K) fino a un dato mese incluso, a
 // partire dalla lettura_iniziale del contatore (il valore che il contatore
 // fisico mostrava all'attivazione: 0 per un contatore nuovo, un valore reale

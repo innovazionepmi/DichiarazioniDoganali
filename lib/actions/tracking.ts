@@ -51,3 +51,22 @@ export async function toggleFattura(
 
   revalidatePath("/tracking")
 }
+
+// Importo fattura per cliente/anno (fix richiesto da Paolo, accanto alla
+// spunta "emessa"): upsert parziale, senza toccare `emessa` — se la riga non
+// esiste ancora (nessuna fattura mai spuntata) viene creata con
+// emessa=false di default.
+export async function aggiornaImportoFattura(
+  clienteId: string,
+  anno: number,
+  importo: number | null
+): Promise<ActionResult> {
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from("tracking_fatture")
+    .upsert({ cliente_id: clienteId, anno, importo }, { onConflict: "cliente_id,anno" })
+
+  if (error) return { error: error.message }
+
+  revalidatePath("/tracking")
+}

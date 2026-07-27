@@ -29,10 +29,17 @@ export type {
 // logica pura e testata separatamente), coerente con l'approccio minimalista
 // del resto del progetto.
 //
-// Endpoint verificati sugli XSD/WSDL ufficiali ADM — solo l'ambiente di test
-// è documentato (l'endpoint di produzione non è ancora pubblicato da ADM, e
-// per produzione manca comunque il certificato client, vedi
-// lib/actions/certificati-adm.ts).
+// Endpoint verificati sugli XSD/WSDL ufficiali ADM per l'ambiente di test.
+// Per produzione, il dominio (interop.adm.gov.it) è stato confermato
+// raggiungibile e protetto da mTLS con la CA di ADM (2026-07-27, verificato
+// con openssl s_client + il certificato di produzione già caricato):
+// controlloStato e recuperoEsito rispondono componendo semplicemente lo
+// stesso path del test su questo nuovo dominio. L'endpoint di **invio**
+// (EEsemestraliM24Service) invece dà 404 su tutte le varianti di path
+// provate finora — resta `null` finché non troviamo il path giusto (da
+// verificare sulla documentazione ufficiale ADM, non per tentativi:
+// continuare a indovinare path su un sistema di produzione non è
+// appropriato). Vedi PROJECT_STATUS.md sezione dedicata.
 //
 // Verificato con openssl s_client (2026-07-14): il certificato TLS del
 // server ADM è emesso da Let's Encrypt, una CA pubblica già fidata di
@@ -47,10 +54,14 @@ export type {
 // resta necessario.
 type Ambiente = "test" | "produzione"
 
-const CONFIGURAZIONE_AMBIENTE: Record<
-  Ambiente,
-  { invio: string; controlloStato: string; soapAction: string; recuperoEsito: string } | null
-> = {
+type ConfigurazioneAmbiente = {
+  invio: string | null
+  controlloStato: string
+  soapAction: string
+  recuperoEsito: string
+}
+
+const CONFIGURAZIONE_AMBIENTE: Record<Ambiente, ConfigurazioneAmbiente> = {
   test: {
     invio:
       "https://platformtest.adm.gov.it/EEsemestraliM24ServiceWeb/services/EEsemestraliM24Service",
@@ -62,7 +73,16 @@ const CONFIGURAZIONE_AMBIENTE: Record<
     // (soapAction="" nel binding), stile document/literal.
     recuperoEsito: "https://platformtest.adm.gov.it/InteropServiceWEB/services/InteropService",
   },
-  produzione: null,
+  produzione: {
+    // Invio non ancora confermato — vedi commento sopra. `null` fa sì che
+    // inviaDichiarazioneSoap risponda con un errore friendly invece di
+    // tentare una POST su un path indovinato a caso.
+    invio: null,
+    controlloStato:
+      "https://interop.adm.gov.it/InteropRServiceWeb/services/InteropRService/selezionaStato",
+    soapAction: "http://process.eesemestralim24.domest.sogei.it/wsdl/EEsemestraliM24Service",
+    recuperoEsito: "https://interop.adm.gov.it/InteropServiceWEB/services/InteropService",
+  },
 }
 
 // Il certificato (JSON {certificatoBase64, password} cifrato in Vault) è lo
@@ -141,11 +161,11 @@ export async function inviaDichiarazioneSoap({
   dichiarante: string
 }): Promise<EsitoInvioAdm> {
   const config = CONFIGURAZIONE_AMBIENTE[ambiente]
-  if (!config) {
+  if (!config.invio) {
     return {
       ok: false,
       categoria: "altro",
-      messaggio: `L'ambiente "${ambiente}" non è ancora configurato (endpoint/certificato non disponibili).`,
+      messaggio: `L'endpoint di invio per l'ambiente "${ambiente}" non è ancora disponibile.`,
     }
   }
 
@@ -192,13 +212,6 @@ export async function controllaStatoSoap({
   iut: string
 }): Promise<EsitoControlloStato> {
   const config = CONFIGURAZIONE_AMBIENTE[ambiente]
-  if (!config) {
-    return {
-      ok: false,
-      categoria: "altro",
-      messaggio: `L'ambiente "${ambiente}" non è ancora configurato.`,
-    }
-  }
 
   const certificato = await caricaCertificatoPerAmbiente(ambiente)
   if ("errore" in certificato) {
@@ -248,13 +261,6 @@ export async function recuperaEsitoSoap({
   iut: string
 }): Promise<EsitoRecuperoEsito> {
   const config = CONFIGURAZIONE_AMBIENTE[ambiente]
-  if (!config) {
-    return {
-      ok: false,
-      categoria: "altro",
-      messaggio: `L'ambiente "${ambiente}" non è ancora configurato.`,
-    }
-  }
 
   const certificato = await caricaCertificatoPerAmbiente(ambiente)
   if ("errore" in certificato) {

@@ -30,13 +30,16 @@ export async function generaRegistroLetture(
   const { data: impianto, error: impiantoError } = await supabase
     .from("impianti")
     .select(
-      "id, nome_impianto, cliente_id, codice_impianto_f24, indirizzo_via, indirizzo_citta, attributi_extra"
+      "id, nome_impianto, cliente_id, codice_impianto_f24, indirizzo_via, indirizzo_cap, indirizzo_citta, indirizzo_provincia, ufficio_amministrativo"
     )
     .eq("id", impiantoId)
     .single()
   if (impiantoError || !impianto) return { error: impiantoError?.message ?? "Impianto non trovato" }
   if (!impianto.codice_impianto_f24) {
     return { error: "Manca il codice ditta/licenza dell'impianto: compilalo prima di generare il registro." }
+  }
+  if (!impianto.ufficio_amministrativo) {
+    return { error: "Manca l'Ufficio Amministrativo dell'impianto: compilalo prima di generare il registro." }
   }
 
   const { data: cliente, error: clienteError } = await supabase
@@ -48,7 +51,7 @@ export async function generaRegistroLetture(
 
   const { data: contatori, error: contatoriError } = await supabase
     .from("contatori")
-    .select("id, matricola, costante_k, lettura_iniziale")
+    .select("id, matricola, tipo, costante_k, lettura_iniziale")
     .eq("impianto_id", impiantoId)
   if (contatoriError) return { error: contatoriError.message }
   if (!contatori || contatori.length === 0) {
@@ -82,17 +85,17 @@ export async function generaRegistroLetture(
       if (!haLetture) return null
       return letturaRegistro(c.lettura_iniziale, K, storia, { anno, mese })
     })
-    return { matricola: c.matricola, letturePerMese }
+    return { matricola: c.matricola, tipo: c.tipo, costanteK: K, letturePerMese }
   })
-
-  const attributiExtra = (impianto.attributi_extra ?? {}) as Record<string, unknown>
 
   const pdfBytes = await generaRegistroLetturePdf({
     ragioneSociale: cliente.ragione_sociale,
     codiceDitta: impianto.codice_impianto_f24,
     comune: impianto.indirizzo_citta ?? "",
+    provincia: impianto.indirizzo_provincia ?? "",
     indirizzo: impianto.indirizzo_via ?? "",
-    ufficioDogane: (attributiExtra.licenza_ufficio_dogane as string | undefined) ?? null,
+    cap: impianto.indirizzo_cap ?? "",
+    ufficioDogane: impianto.ufficio_amministrativo,
     anno,
     contatori: contatoriInput,
   })
@@ -142,13 +145,16 @@ export async function inviaRegistroLettureVuotoEmail(
   const { data: impianto, error: impiantoError } = await supabase
     .from("impianti")
     .select(
-      "id, nome_impianto, cliente_id, codice_impianto_f24, indirizzo_via, indirizzo_citta, attributi_extra"
+      "id, nome_impianto, cliente_id, codice_impianto_f24, indirizzo_via, indirizzo_cap, indirizzo_citta, indirizzo_provincia, ufficio_amministrativo"
     )
     .eq("id", impiantoId)
     .single()
   if (impiantoError || !impianto) return { error: impiantoError?.message ?? "Impianto non trovato" }
   if (!impianto.codice_impianto_f24) {
     return { error: "Manca il codice ditta/licenza dell'impianto: compilalo prima di generare il registro." }
+  }
+  if (!impianto.ufficio_amministrativo) {
+    return { error: "Manca l'Ufficio Amministrativo dell'impianto: compilalo prima di generare il registro." }
   }
 
   const { data: cliente, error: clienteError } = await supabase
@@ -163,24 +169,26 @@ export async function inviaRegistroLettureVuotoEmail(
 
   const { data: contatori, error: contatoriError } = await supabase
     .from("contatori")
-    .select("matricola")
+    .select("matricola, tipo, costante_k")
     .eq("impianto_id", impiantoId)
   if (contatoriError) return { error: contatoriError.message }
   if (!contatori || contatori.length === 0) {
     return { error: "Nessun contatore censito per questo impianto." }
   }
 
-  const attributiExtra = (impianto.attributi_extra ?? {}) as Record<string, unknown>
-
   const pdfBytes = await generaRegistroLetturePdf({
     ragioneSociale: cliente.ragione_sociale,
     codiceDitta: impianto.codice_impianto_f24,
     comune: impianto.indirizzo_citta ?? "",
+    provincia: impianto.indirizzo_provincia ?? "",
     indirizzo: impianto.indirizzo_via ?? "",
-    ufficioDogane: (attributiExtra.licenza_ufficio_dogane as string | undefined) ?? null,
+    cap: impianto.indirizzo_cap ?? "",
+    ufficioDogane: impianto.ufficio_amministrativo,
     anno,
     contatori: contatori.map((c) => ({
       matricola: c.matricola,
+      tipo: c.tipo,
+      costanteK: c.costante_k ?? 1,
       letturePerMese: Array.from({ length: 12 }, () => null),
     })),
   })

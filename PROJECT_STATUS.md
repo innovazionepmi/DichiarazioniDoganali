@@ -420,12 +420,19 @@ dopo "ho un dubbio atroce"):
    **noi** (riuso di `pdf-lib`, stesso approccio di `f24-generator.ts`) — non
    ancora costruito.
 
-**Endpoint verificati sugli XSD/WSDL ufficiali** (solo ambiente di test
-documentato finora — **l'endpoint di produzione non è ancora pubblicato da
-ADM**, normale per un sistema appena lanciato):
+**Endpoint verificati sugli XSD/WSDL ufficiali (ambiente di test)**:
 - Invio: `https://platformtest.adm.gov.it/EEsemestraliM24ServiceWeb/services/EEsemestraliM24Service`, SOAP action `http://process.eesemestralim24.domest.sogei.it/wsdl/EEsemestraliM24Service`, `serviceId="invioEnergiaElettricaSemestrale"`
 - Recupero esito: `https://platformtest.adm.gov.it/InteropServiceWEB/services/InteropService` (`recuperaEsito(IUT)`)
 - Controllo stato: `https://platformtest.adm.gov.it/InteropRServiceWeb/services/InteropRService/selezionaStato/{iut}` (REST)
+
+**Endpoint di produzione — dominio confermato, invio ancora da individuare
+(2026-07-27)**: Paolo ha comunicato il dominio di produzione
+(`interop.adm.gov.it`, al posto di `platformtest.adm.gov.it`). Verificato
+con `openssl s_client` + il certificato di produzione già caricato
+(handshake mTLS completo, risposte HTTP reali dal backend Sogei):
+- **Controllo stato**: `https://interop.adm.gov.it/InteropRServiceWeb/services/InteropRService/selezionaStato/{iut}` — **confermato** (405 su GET nudo senza `{iut}`, atteso). **Aggiornato in `lib/adm/soap-client.ts`**.
+- **Recupero esito**: `https://interop.adm.gov.it/InteropServiceWEB/services/InteropService` — **confermato** (redirect 302 verso il WSDL reale). **Aggiornato in `lib/adm/soap-client.ts`**.
+- **Invio** (`EEsemestraliM24Service`): **non confermato** — `404` su tutte le varianti di path provate componendo lo stesso schema del test sul nuovo dominio (e `403` su altre due, probabilmente un WAF generico su `/services/*`, non una conferma). **Lasciato `invio: null`** in `CONFIGURAZIONE_AMBIENTE.produzione` — `inviaDichiarazioneSoap` risponde con un errore friendly finché non troviamo il path giusto. **Da recuperare dalla documentazione ufficiale ADM** (non per tentativi: continuare a indovinare path su un sistema di produzione non è appropriato) o chiedendo a Paolo/supporto ADM.
 
 **Costruito in questa sessione — gestione certificato di autenticazione ADM**:
 - Nuova tabella `certificati_adm` (`supabase/migrations/20260714140001_certificati_adm.sql`,
@@ -1031,6 +1038,139 @@ l'onboarding da licenza PDF e l'import PDF/screenshot letture) si scrive
 **Prossimo passo**: quando l'utente ha sentito Paolo e ha un file di
 esempio, riprendere da qui.
 
+## Correzioni dal meeting Emilio↔Paolo del 27/07/2026 (fatte, da testare in staging)
+
+Paolo ha condiviso l'endpoint di produzione ADM (`interop.adm.gov.it`,
+sezione "Fase 4, invio S2S: collegamento al flusso reale" più sopra per il
+dettaglio tecnico) e sei correzioni emerse da una sessione di revisione
+dell'app insieme a Emilio (trascrizione Google Doc, letta per intero per
+contesto aggiuntivo).
+
+1. **Nascosto il campo "codice licenza" dall'anagrafica clienti**
+   (`components/clienti/cliente-form.tsx`): era un doppione con
+   `impianti.codice_impianto_f24` — un cliente può avere più impianti con
+   codici diversi, quindi il dato ha senso solo a livello di impianto. Solo
+   rimosso dal form (nessuna migration): il campo `clienti.codice_licenza`
+   resta a schema per compatibilità coi dati già inseriti, semplicemente non
+   più mostrato/editabile.
+2. **Registro letture ricostruito per replicare esattamente il modello
+   ufficiale** (`lib/pdf/registro-letture-generator.ts`, riscritto da zero):
+   l'utente ha fornito un registro reale (cliente Giorik, Mod. M-bis-36,
+   frontespizio + pagine annuali) — estratto il **logo ufficiale
+   dell'Agenzia delle Dogane e dei Monopoli** direttamente dal file (un
+   `.doc` legacy: niente `soffice`/Word COM disponibile in modo affidabile,
+   risolto leggendo i JPEG grezzi dallo stream OLE `Data` con `olefile`
+   Python — tecnica utile da ricordare se ricapita un `.doc` da cui estrarre
+   immagini). Ora il PDF ha 2 pagine fedeli all'originale: frontespizio
+   (logo, "Ufficio delle Dogane di {ufficio}", codice ditta, ubicazione,
+   ditta, note legali numerate, protocollo) + pagina annuale (logo, "Serie
+   M-bis-Mod.36", tabella misura/matricola/K/Riporto/12 mesi con colonna
+   ANNOTAZIONI, firma "per la Ditta"). **Annuale, non triennale** come
+   l'originale (richiesto esplicitamente). Il logo (immagine pubblica
+   dell'ente) è salvato in `lib/pdf/templates/logo-agenzia-dogane.jpg`.
+   "Ufficio delle Dogane di ..." ora legge `impianti.ufficio_amministrativo`
+   (non più `attributi_extra.licenza_ufficio_dogane`) — nuovo campo
+   obbligatorio richiesto con errore esplicito se mancante, stesso pattern
+   di `codice_impianto_f24`. Verificato visivamente via rasterizzazione
+   (stessa tecnica già usata per altri PDF generati) — nessun disallineamento.
+3. **Riga "Lettura iniziale"** in `/letture/[impiantoId]`
+   (`components/letture/letture-table.tsx`): mostra, per ciascun contatore,
+   la lettura di registro calcolata al 31/12 dell'anno precedente
+   (`letturaRegistro` con lo storico completo — se non c'è storico, ritorna
+   semplicemente `lettura_iniziale` così com'è). **Editabile**: se
+   l'operatore cambia il valore, al salvataggio aggiorna direttamente
+   `contatori.lettura_iniziale` (nuova azione `aggiornaLetturaIniziale` in
+   `lib/actions/letture.ts`) — pensato per i contatori nuovi subentrati ad
+   anno iniziato, che non hanno storico da cui calcolare automaticamente il
+   valore.
+4. **Etichette mese con ultimo giorno** ("Gennaio 31", "Febbraio 28/29",
+   ecc.): nuova funzione `ultimoGiornoMese` in `lib/calc/registro.ts`
+   (gestisce gli anni bisestili), usata sia nella tabella letture in-app sia
+   nel registro PDF (che già la usava, essendo stato riscritto per primo —
+   estratta lì per essere condivisa invece di duplicata).
+5. **Colonna "Tot." per contatore** nella tabella letture: accanto a
+   F1/F2/F3 di ciascun contatore, il subtotale F1+F2+F3 di quel contatore
+   (riusa `valorePeriodo`, già calcolato per il totale di riga — prima solo
+   sommato su tutti i contatori insieme, ora visibile anche per il singolo
+   contatore).
+6. **Importo fattura nel tracking**: nuova colonna `tracking_fatture.importo`
+   (`supabase/migrations/20260727120001_tracking_fatture_importo.sql`, **non
+   ancora applicata in staging**), nuova azione `aggiornaImportoFattura`
+   (upsert parziale, non tocca `emessa`), input numerico accanto alla
+   checkbox "Fattura {anno}" in `components/tracking/tracking-table.tsx`
+   (salva su blur). Gap già individuato nella gap-analysis del brief,
+   chiuso ora su richiesta esplicita di Paolo.
+
+**Verificato**: `npx tsc --noEmit`, `npm run test` (60 test, nessuno nuovo —
+tutte le modifiche sono UI/orchestrazione senza logica pura aggiuntiva
+isolabile, tranne `ultimoGiornoMese` che eredita la copertura indiretta
+delle funzioni esistenti in `registro.ts`), `npm run lint` puliti (solo il
+warning noto). Verificato **visivamente** il nuovo registro PDF (frontespizio
++ pagina annuale) con dati sintetici, rasterizzato a PNG.
+
+**Non ancora testato in staging**: richiede login. Applica la migration
+`20260727120001_tracking_fatture_importo.sql`, poi verifica: (1) il form
+cliente non mostra più "codice licenza"; (2) un impianto con
+`ufficio_amministrativo` compilato genera un registro letture con logo e
+struttura corrette (frontespizio + 1 pagina annuale); (3) `/letture/[id]`
+mostra la riga "Lettura iniziale" (editabile), le etichette mese con giorno,
+e la colonna "Tot." per contatore; (4) `/tracking` permette di inserire un
+importo fattura per cliente/anno.
+
+**Punto aperto emerso dalla trascrizione, non ancora chiarito** (non
+azionabile ora): durante un test in ambiente di addestramento è comparso un
+avviso relativo al "Quadro L" — resta da capire con ADM/Paolo se il
+recupero di questo tipo di esiti può essere automatizzato via software o se
+debba restare manuale tramite MONET. Nessuna azione nostra necessaria finché
+non si chiarisce.
+
+### Riepilogo: dove viene usata la costante K nei calcoli
+
+Richiesto esplicitamente dall'utente. La costante K (`contatori.costante_k`)
+è il rapporto di trasformazione del gruppo di misura (tipicamente quello dei
+trasformatori di corrente/tensione) — converte tra il valore mostrato dal
+contatore fisico ("lettura di registro") e l'energia reale in kWh. Punti
+del codice dove entra in gioco:
+
+1. **Anagrafica contatore**: campo editabile (`components/impianti/
+   contatore-form.tsx`, validato in `lib/validation/contatore.schema.ts`,
+   salvato da `lib/actions/contatori.ts`) — l'unico posto dove K viene
+   impostato/modificato direttamente dall'operatore.
+2. **Motore di calcolo del registro** (`lib/calc/registro.ts`,
+   `letturaRegistro()`): converte i valori mensili reali (F1+F2+F3, kWh) in
+   lettura progressiva di registro **dividendo** per K
+   (`letturaIniziale + somma/K`). Usato da: la tabella "Letture" in-app
+   (riconciliazione + la nuova riga "Lettura iniziale"), il registro letture
+   PDF, e la generazione della dichiarazione XML (LettA/LettP per Quadro
+   A/G, vedi sotto).
+3. **`riconciliazione()`** (stesso file): verifica che la somma dei valori
+   mensili reali coincida con (lettura fine periodo − lettura inizio
+   periodo) **moltiplicata** per K — il controllo "verificato/non
+   verificato" mostrato nella sezione Letture.
+4. **Dichiarazione XML EE semestrale** (`lib/xml/
+   dichiarazione-ee-semestrale.ts` + `lib/actions/dichiarazioni.ts`): K è un
+   dato **richiesto dal tracciato ADM stesso**, non solo un calcolo interno
+   — compare come `CostLett` in ogni riga di Quadro A/G, insieme a
+   LettA/LettP (calcolate con `letturaRegistro`, quindi ÷K) e DiffLett
+   (LettA−LettP, che moltiplicato per K tornerebbe a coincidere col kwh
+   reale del mese — stessa relazione descritta nel brief §4.1).
+5. **Ricevuta invio S2S in PDF** (`lib/pdf/ricevuta-invio-generator.ts`):
+   mostra lo stesso `CostLett` riletto dall'XML archiviato, solo per
+   visualizzazione — nessun nuovo calcolo.
+6. **Import letture da PDF/screenshot** (`lib/parsers/edistribuzione-pdf.ts`,
+   `lib/ai/estrai-letture-screenshot.ts`): il valore di K stampato dal
+   distributore viene estratto e incluso nel risultato dell'analisi, ma
+   **non viene mai scritto automaticamente** su `contatori.costante_k` — resta
+   solo nel risultato dell'analisi, attualmente non mostrato a schermo
+   nell'anteprima di import (punto potenzialmente da migliorare in futuro:
+   permetterebbe di rilevare se il distributore ha cambiato K, es. dopo un
+   cambio di trasformatori, senza dover controllare a mano).
+
+In sintesi: **K non serve solo per la dichiarazione** — è centrale anche
+per il calcolo di registro/riconciliazione usato nella sezione Letture e
+nel registro letture PDF, oltre a essere un dato obbligatorio del tracciato
+XML verso ADM.
+
 ## Verifica esterna (Energix) su scadenze e periodicità
 
 Paolo ha girato due articoli di Energix
@@ -1104,10 +1244,9 @@ test + CA root ADM già caricati e verificati. Quello che resta:
    finché ADM non pubblica l'endpoint di produzione — atteso, non un bug).
    **Urgente**: la finestra del I semestre 2026 (1 luglio – 30 settembre) è
    già aperta.
-1bis. **Carica anche il certificato di produzione** quando comodo (nessuna
-   fretta): `C:\cert\produzione\certificato-autenticazione-produzione.p12`,
-   password `Dichiarazioni2026!`, su `/impostazioni` → ambiente di
-   produzione.
+1bis. ~~Carica anche il certificato di produzione~~ **Fatto** —
+   caricato su `/impostazioni` → ambiente di produzione (password
+   condivisa privatamente con l'utente, mai nel repo).
 1bis. **Chiedi conferma a Paolo sulla regola di periodicità**: verifica se
    "resta annuale solo chi è in cessione totale o fa
    vettoriamento/distribuzione" (fonte Energix) corrisponde davvero a
@@ -1167,6 +1306,11 @@ test + CA root ADM già caricati e verificati. Quello che resta:
    verificato che era solo un ritardo di consegna (email arrivata poco
    dopo), non un errore. La sezione "Log invii email" in `/impostazioni`
    resta comunque disponibile per dubbi futuri.
+13. **Applica la migration `20260727120001_tracking_fatture_importo.sql`**
+   e prova le sei correzioni dal meeting del 27/07 — vedi sezione dedicata
+   sopra per l'elenco completo e cosa verificare per ciascuna.
+14. Chiedi a Paolo/ADM chiarimenti sul "Quadro L" (avviso comparso in
+   ambiente di addestramento) — vedi punto aperto nella sezione dedicata.
 
 ## File utili per orientarsi
 
@@ -1191,4 +1335,5 @@ test + CA root ADM già caricati e verificati. Quello che resta:
 - Test invio email da /impostazioni: `listaDichiarazioniInviate` in `lib/actions/dichiarazioni.ts`, UI `components/impostazioni/test-email-cliente-section.tsx`
 - Registro letture vuoto via email: `inviaRegistroLettureVuotoEmail` in `lib/actions/registro-letture.ts`, UI in `components/impianti/registro-letture-section.tsx`
 - Log invii email: logging centralizzato in `lib/email/client.ts`, azione `lib/actions/email-log.ts`, UI `components/impostazioni/log-email-section.tsx`, migration `supabase/migrations/20260721100001_email_log.sql`
+- Correzioni meeting 27/07 (registro fedele al modello ADM, lettura iniziale, importo fattura): `lib/pdf/registro-letture-generator.ts` (+ logo in `lib/pdf/templates/logo-agenzia-dogane.jpg`), `components/letture/letture-table.tsx` (+ `aggiornaLetturaIniziale` in `lib/actions/letture.ts`), `ultimoGiornoMese` in `lib/calc/registro.ts`, `aggiornaImportoFattura` in `lib/actions/tracking.ts`, migration `supabase/migrations/20260727120001_tracking_fatture_importo.sql`
 - Setup locale: [`README.md`](./README.md)

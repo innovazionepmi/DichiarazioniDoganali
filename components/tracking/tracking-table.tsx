@@ -5,6 +5,7 @@ import { ChevronDown, ChevronRight } from "lucide-react"
 import { toast } from "sonner"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Badge } from "@/components/ui/badge"
+import { Input } from "@/components/ui/input"
 import {
   Table,
   TableBody,
@@ -13,7 +14,11 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { toggleDichiarazione, toggleFattura } from "@/lib/actions/tracking"
+import {
+  aggiornaImportoFattura,
+  toggleDichiarazione,
+  toggleFattura,
+} from "@/lib/actions/tracking"
 
 type Cliente = { id: string; ragione_sociale: string; partner_id: string | null }
 type Impianto = {
@@ -23,7 +28,7 @@ type Impianto = {
   diritto_licenza_dovuto: boolean
 }
 type Dichiarazione = { impianto_id: string; periodo: number; inviata: boolean }
-type Fattura = { cliente_id: string; emessa: boolean }
+type Fattura = { cliente_id: string; emessa: boolean; importo: number | null }
 
 function chiaveDichiarazione(impiantoId: string, periodo: number) {
   return `${impiantoId}-${periodo}`
@@ -73,6 +78,13 @@ export function TrackingTable({
     }
     return stato
   })
+  const [importiFatture, setImportiFatture] = useState<Record<string, string>>(() => {
+    const stato: Record<string, string> = {}
+    for (const f of fatture) {
+      stato[f.cliente_id] = f.importo !== null ? String(f.importo) : ""
+    }
+    return stato
+  })
 
   const impiantiPerCliente = useMemo(() => {
     const mappa = new Map<string, Impianto[]>()
@@ -100,6 +112,21 @@ export function TrackingTable({
       if (result?.error) {
         toast.error(result.error)
         setStatoFatture((prev) => ({ ...prev, [clienteId]: !emessa }))
+      }
+    })
+  }
+
+  function handleSalvaImporto(clienteId: string) {
+    const testo = importiFatture[clienteId] ?? ""
+    const valore = testo.trim() === "" ? null : Number(testo.replace(",", "."))
+    if (valore !== null && !Number.isFinite(valore)) {
+      toast.error("Importo non valido")
+      return
+    }
+    startTransition(async () => {
+      const result = await aggiornaImportoFattura(clienteId, anno, valore)
+      if (result?.error) {
+        toast.error(result.error)
       }
     })
   }
@@ -181,7 +208,17 @@ export function TrackingTable({
                     )}
                   </TableCell>
                   <TableCell className="text-right">
-                    <div className="flex justify-end">
+                    <div className="flex items-center justify-end gap-2">
+                      <Input
+                        className="h-8 w-24 text-right"
+                        inputMode="decimal"
+                        placeholder="Importo €"
+                        value={importiFatture[cliente.id] ?? ""}
+                        onChange={(e) =>
+                          setImportiFatture((prev) => ({ ...prev, [cliente.id]: e.target.value }))
+                        }
+                        onBlur={() => handleSalvaImporto(cliente.id)}
+                      />
                       <Checkbox
                         checked={statoFatture[cliente.id] ?? false}
                         disabled={pending}
