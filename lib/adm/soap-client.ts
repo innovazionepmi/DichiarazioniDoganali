@@ -29,17 +29,18 @@ export type {
 // logica pura e testata separatamente), coerente con l'approccio minimalista
 // del resto del progetto.
 //
-// Endpoint verificati sugli XSD/WSDL ufficiali ADM per l'ambiente di test.
-// Per produzione, il dominio (interop.adm.gov.it) è stato confermato
-// raggiungibile e protetto da mTLS con la CA di ADM (2026-07-27, verificato
-// con openssl s_client + il certificato di produzione già caricato):
-// controlloStato e recuperoEsito rispondono componendo semplicemente lo
-// stesso path del test su questo nuovo dominio. L'endpoint di **invio**
-// (EEsemestraliM24Service) invece dà 404 su tutte le varianti di path
-// provate finora — resta `null` finché non troviamo il path giusto (da
-// verificare sulla documentazione ufficiale ADM, non per tentativi:
-// continuare a indovinare path su un sistema di produzione non è
-// appropriato). Vedi PROJECT_STATUS.md sezione dedicata.
+// Endpoint di produzione confermati (2026-07-30) dal manuale operativo
+// ufficiale "ambiente reale" fornito dall'utente
+// (MANUALE_OPERATIVO_DICHIARAZIONI_EE_SEMESTRALI_REALE.pdf +
+// ManualeRecuperaEsito.pdf): il dominio corretto per tutti e tre i servizi
+// è **platform.adm.gov.it** (non interop.adm.gov.it, che pure risponde per
+// controlloStato/recuperoEsito ma non è quello documentato per l'invio —
+// probabilmente un dominio "interoperabilità" aggiuntivo, non quello
+// canonico). Verificato via openssl s_client + il certificato di
+// produzione reale: invio → 302 verso il WSDL, controlloStato → 406 "Dati
+// input non validi" con un IUT fittizio (endpoint vivo, solo dato di
+// esempio invalido), recuperoEsito → 302 verso il WSDL. Vedi
+// PROJECT_STATUS.md e memoria project-xml-dogane-ricerca per il dettaglio.
 //
 // Verificato con openssl s_client (2026-07-14): il certificato TLS del
 // server ADM è emesso da Let's Encrypt, una CA pubblica già fidata di
@@ -74,10 +75,16 @@ const CONFIGURAZIONE_AMBIENTE: Record<Ambiente, ConfigurazioneAmbiente> = {
     recuperoEsito: "https://platformtest.adm.gov.it/InteropServiceWEB/services/InteropService",
   },
   produzione: {
-    // Invio non ancora confermato — vedi commento sopra. `null` fa sì che
-    // inviaDichiarazioneSoap risponda con un errore friendly invece di
-    // tentare una POST su un path indovinato a caso.
-    invio: null,
+    // Invio: platform.adm.gov.it, confermato sia dal manuale ufficiale che
+    // dallo screenshot del pannello "Servizio" dell'account ADM di Paolo.
+    invio:
+      "https://platform.adm.gov.it/EEsemestraliM24ServiceWeb/services/EEsemestraliM24Service",
+    // Controllo stato e recupero esito: interop.adm.gov.it — il pannello
+    // "Servizi per Stato/Esito" del *proprio* account ADM (più autorevole
+    // del manuale generico, che indicava invece platform.adm.gov.it per
+    // questi due) mostra esplicitamente questo dominio per entrambi.
+    // Entrambi i domini rispondono dal vivo (verificato con openssl
+    // s_client), ma questo è quello assegnato esplicitamente all'account.
     controlloStato:
       "https://interop.adm.gov.it/InteropRServiceWeb/services/InteropRService/selezionaStato",
     soapAction: "http://process.eesemestralim24.domest.sogei.it/wsdl/EEsemestraliM24Service",

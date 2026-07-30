@@ -433,14 +433,38 @@ dopo "ho un dubbio atroce"):
 - Recupero esito: `https://platformtest.adm.gov.it/InteropServiceWEB/services/InteropService` (`recuperaEsito(IUT)`)
 - Controllo stato: `https://platformtest.adm.gov.it/InteropRServiceWeb/services/InteropRService/selezionaStato/{iut}` (REST)
 
-**Endpoint di produzione — dominio confermato, invio ancora da individuare
-(2026-07-27)**: Paolo ha comunicato il dominio di produzione
-(`interop.adm.gov.it`, al posto di `platformtest.adm.gov.it`). Verificato
-con `openssl s_client` + il certificato di produzione già caricato
-(handshake mTLS completo, risposte HTTP reali dal backend Sogei):
-- **Controllo stato**: `https://interop.adm.gov.it/InteropRServiceWeb/services/InteropRService/selezionaStato/{iut}` — **confermato** (405 su GET nudo senza `{iut}`, atteso). **Aggiornato in `lib/adm/soap-client.ts`**.
-- **Recupero esito**: `https://interop.adm.gov.it/InteropServiceWEB/services/InteropService` — **confermato** (redirect 302 verso il WSDL reale). **Aggiornato in `lib/adm/soap-client.ts`**.
-- **Invio** (`EEsemestraliM24Service`): **non confermato** — `404` su tutte le varianti di path provate componendo lo stesso schema del test sul nuovo dominio (e `403` su altre due, probabilmente un WAF generico su `/services/*`, non una conferma). **Lasciato `invio: null`** in `CONFIGURAZIONE_AMBIENTE.produzione` — `inviaDichiarazioneSoap` risponde con un errore friendly finché non troviamo il path giusto. **Da recuperare dalla documentazione ufficiale ADM** (non per tentativi: continuare a indovinare path su un sistema di produzione non è appropriato) o chiedendo a Paolo/supporto ADM.
+**Endpoint di produzione — tutti e tre confermati 🎉 (2026-07-30)**: Paolo
+ha recuperato la documentazione ufficiale dell'ambiente reale (cartella
+`Dichiarazione-semestrale-2026-ambiente-reale`, con manuali, WSDL, XSD **e 4
+screenshot del pannello "Servizio"/"Servizi per Stato/Esito" del proprio
+account ADM** — questi ultimi si sono rivelati la fonte più autorevole,
+correggendo una prima lettura basata solo sul manuale generico):
+- **Invio**: `https://platform.adm.gov.it/EEsemestraliM24ServiceWeb/services/EEsemestraliM24Service`
+  — confermato sia dal manuale che dallo screenshot del pannello "Servizio"
+  dell'account di Paolo, e verificato dal vivo (redirect 302 verso il WSDL
+  reale). **Aggiornato in `lib/adm/soap-client.ts`** (`invio` non è più `null`).
+- **Controllo stato**: `https://interop.adm.gov.it/InteropRServiceWeb/services/InteropRService/selezionaStato/{iut}`
+  — il manuale generico indicava `platform.adm.gov.it` per questo, ma lo
+  screenshot del pannello "Servizi per Stato/Esito" del *proprio* account
+  ADM mostra esplicitamente `interop.adm.gov.it` — presa come fonte più
+  autorevole (config specifica dell'account, non un manuale generico).
+  Verificato dal vivo (406 "Dati input non validi" con un IUT fittizio:
+  endpoint vivo).
+- **Recupero esito**: `https://interop.adm.gov.it/InteropServiceWEB/services/InteropService`
+  — stesso ragionamento (screenshot dell'account); `ManualeRecuperaEsito.pdf`
+  conferma comunque che **entrambi** i domini (`interop.` e `platform.`)
+  sono documentati come validi per questo servizio specifico, quindi non
+  c'è contraddizione qui, solo per il controllo stato. Verificato dal vivo
+  (redirect 302 verso il WSDL).
+
+**Nota per il futuro**: se un domani uno di questi endpoint smettesse di
+rispondere, ricontrollare prima lo screenshot del pannello account
+(più specifico) che il manuale generico (può essere disallineato).
+
+**L'invio S2S reale (`inviaDichiarazioneReale`) può ora davvero contattare
+ADM** — non è più bloccato dall'errore "endpoint non disponibile". Prossimo
+passo naturale: un vero test con un cliente reale (già in programma, vedi
+azione di Paolo dalla trascrizione del meeting 27/07: "Test dichiarazione").
 
 **Costruito in questa sessione — gestione certificato di autenticazione ADM**:
 - Nuova tabella `certificati_adm` (`supabase/migrations/20260714140001_certificati_adm.sql`,
@@ -1266,10 +1290,13 @@ test + CA root ADM già caricati e verificati. Quello che resta:
    collegamento al flusso reale". **Da applicare/testare tu**: esegui la
    migration `20260720120001_dichiarazione_invio_reale.sql` via SQL Editor,
    poi prova il flusso "Genera dichiarazione" → "Invia dichiarazione" su un
-   impianto di test in staging (l'invio vero fallirà con un errore friendly
-   finché ADM non pubblica l'endpoint di produzione — atteso, non un bug).
-   **Urgente**: la finestra del I semestre 2026 (1 luglio – 30 settembre) è
-   già aperta.
+   impianto di test in staging. **Endpoint di produzione ora confermato
+   (2026-07-30)** — l'invio può davvero raggiungere ADM, non c'è più
+   l'errore friendly "endpoint non disponibile" a bloccare il test. Prima
+   di un invio con un cliente vero: fai attenzione, è una dichiarazione
+   ufficiale con effetti fiscali reali (schermata di riepilogo pensata
+   apposta per questo). **Urgente**: la finestra del I semestre 2026 (1
+   luglio – 30 settembre) è già aperta.
 1bis. ~~Carica anche il certificato di produzione~~ **Fatto** —
    caricato su `/impostazioni` → ambiente di produzione (password
    condivisa privatamente con l'utente, mai nel repo).
@@ -1315,10 +1342,11 @@ test + CA root ADM già caricati e verificati. Quello che resta:
    root di quell'ambiente) — stesso percorso PUDM già usato per quello di
    test.
 8bis. **Quando l'invio in produzione sarà definitivamente operativo**
-   (endpoint ADM pubblicato + primo invio reale riuscito): collegare la
-   spunta automatica di `/tracking` a `inviaDichiarazioneReale` (decisione
-   esplicita dell'utente il 2026-07-21, vedi sezione "Fase 4, dichiarazione
-   XML semestrale" — non farlo prima).
+   (endpoint ADM ora confermato — manca solo il primo invio reale
+   riuscito): collegare la spunta automatica di `/tracking` a
+   `inviaDichiarazioneReale` (decisione esplicita dell'utente il
+   2026-07-21, vedi sezione "Fase 4, dichiarazione XML semestrale" — non
+   farlo prima del primo invio reale riuscito).
 9. (Opzionale) elimina l'utente di test `claude-test@example.com` da
    Supabase Auth Dashboard.
 10. ~~Applica la migration `20260721090001_dichiarazione_email_cliente.sql`~~

@@ -356,12 +356,10 @@ export async function recuperaRiepilogoDichiarazione(
 
 // Invio S2S reale (ambiente produzione — mai addestramento, quello è solo
 // per la nostra sandbox di validazione). Riusa lo stesso client SOAP già
-// validato in addestramento (lib/adm/soap-client.ts). Il dominio di
-// produzione (interop.adm.gov.it) è confermato raggiungibile, ma l'esatto
-// path del servizio di invio non è ancora stato individuato (vedi
-// PROJECT_STATUS.md): fino ad allora questa azione ritorna l'errore
-// friendly già previsto da inviaDichiarazioneSoap, non un crash — la
-// funzione resta pronta per quando il path sarà confermato.
+// validato in addestramento (lib/adm/soap-client.ts). Endpoint di
+// produzione confermato (platform.adm.gov.it, vedi soap-client.ts) —
+// questa azione può ora davvero contattare ADM, non solo rispondere con
+// l'errore friendly di prima.
 export async function inviaDichiarazioneReale(
   dichiarazioneId: string,
   formData: FormData
