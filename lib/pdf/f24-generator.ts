@@ -10,19 +10,6 @@ import { F24_COORD } from "./f24-coordinates"
 // Next.js di includere il file nel tracciamento automatico degli asset.
 const TEMPLATE_PATH = path.join(process.cwd(), "lib/pdf/templates/f24-accise-vuoto.pdf")
 
-export interface F24ReferenteInput {
-  codiceFiscale: string
-  cognome: string
-  nome: string
-  dataNascita: string // YYYY-MM-DD
-  sesso: "M" | "F"
-  comuneNascita: string
-  provinciaNascita: string
-  domicilioComune: string
-  domicilioProvincia: string
-  domicilioVia: string
-}
-
 export interface F24RigaInput {
   provinciaImpianto: string
   codiceIdentificativo: string
@@ -30,7 +17,6 @@ export interface F24RigaInput {
 }
 
 export interface F24Input {
-  referente: F24ReferenteInput
   righe: F24RigaInput[]
   annoRiferimento: number
   dataScadenza: string // YYYY-MM-DD
@@ -99,42 +85,23 @@ function drawAmountAtComma(page: PDFPage, font: PDFFont, value: number, commaX: 
 // numeroRigheMassimo: se un cliente ha più impianti soggetti di quante
 // righe entrano nel modulo, il chiamante deve dividerli su più chiamate
 // (una pagina/PDF ciascuna) — vedi nota nel piano.
+//
+// La sezione "CONTRIBUENTE" (anagrafica di chi paga) resta deliberatamente
+// vuota — richiesta esplicita di Paolo: non è mai sicuro di chi sia
+// effettivamente la persona tenuta al pagamento, va compilata a mano da chi
+// paga davvero, non dall'app.
 export async function generaF24Pdf(input: F24Input): Promise<Uint8Array> {
   const templateBytes = readFileSync(TEMPLATE_PATH)
   const pdfDoc = await PDFDocument.load(templateBytes)
   const courier = await pdfDoc.embedFont(StandardFonts.Courier)
   const helvetica = await pdfDoc.embedFont(StandardFonts.Helvetica)
 
-  const dataNascita = splitDataIso(input.referente.dataNascita)
   const dataScadenza = splitDataIso(input.dataScadenza)
 
   const righeStampate = input.righe.slice(0, F24_COORD.accise.numeroRigheMassimo)
   const totale = righeStampate.reduce((acc, r) => acc + r.importo, 0)
 
   for (const page of pdfDoc.getPages()) {
-    drawChars(page, courier, input.referente.codiceFiscale, F24_COORD.codiceFiscale.xs, F24_COORD.codiceFiscale.y)
-    drawText(page, helvetica, input.referente.cognome, F24_COORD.cognome.x, F24_COORD.cognome.y)
-    drawText(page, helvetica, input.referente.nome, F24_COORD.nome.x, F24_COORD.nome.y)
-    drawChars(
-      page,
-      courier,
-      dataNascita.giorno + dataNascita.mese + dataNascita.anno,
-      F24_COORD.dataNascita.xs,
-      F24_COORD.dataNascita.y
-    )
-    drawText(page, helvetica, input.referente.sesso, F24_COORD.sesso.x, F24_COORD.sesso.y)
-    drawText(page, helvetica, input.referente.comuneNascita, F24_COORD.comuneNascita.x, F24_COORD.comuneNascita.y)
-    drawChars(page, courier, input.referente.provinciaNascita, F24_COORD.provinciaNascita.xs, F24_COORD.provinciaNascita.y)
-    drawText(page, helvetica, input.referente.domicilioComune, F24_COORD.domicilioComune.x, F24_COORD.domicilioComune.y)
-    drawChars(
-      page,
-      courier,
-      input.referente.domicilioProvincia,
-      F24_COORD.domicilioProvincia.xs,
-      F24_COORD.domicilioProvincia.y
-    )
-    drawText(page, helvetica, input.referente.domicilioVia, F24_COORD.domicilioVia.x, F24_COORD.domicilioVia.y)
-
     righeStampate.forEach((riga, index) => {
       const y = F24_COORD.accise.primaRigaY - index * F24_COORD.accise.passoRiga
       drawText(page, helvetica, "D", F24_COORD.accise.ente, y)

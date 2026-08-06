@@ -5,18 +5,6 @@ import { generaF24Pdf, type F24Input } from "./f24-generator"
 
 // Dati interamente inventati (nessun dato reale del cliente).
 const INPUT_SINTETICO: F24Input = {
-  referente: {
-    codiceFiscale: "RSSMRA80A01H501U",
-    cognome: "Rossi",
-    nome: "Mario",
-    dataNascita: "1980-01-01",
-    sesso: "M",
-    comuneNascita: "Comune Di Prova",
-    provinciaNascita: "AB",
-    domicilioComune: "Comune Domicilio",
-    domicilioProvincia: "CD",
-    domicilioVia: "Via Di Prova 12",
-  },
   righe: [
     { provinciaImpianto: "TV", codiceIdentificativo: "TVE00001A", importo: 23.24 },
     { provinciaImpianto: "TV", codiceIdentificativo: "TVE00002B", importo: 77.47 },
@@ -32,14 +20,16 @@ describe("generaF24Pdf", () => {
     expect(doc.getPageCount()).toBe(3)
   })
 
-  it("scrive nel PDF i valori attesi (codice fiscale, nomi, codici riga, importi, totale)", async () => {
+  it("scrive nel PDF i valori attesi (codici riga, importi, totale) e non la sezione anagrafica", async () => {
     const bytes = await generaF24Pdf(INPUT_SINTETICO)
     const parser = new PDFParse({ data: Buffer.from(bytes) })
     const risultato = await parser.getText()
     await parser.destroy()
 
-    expect(risultato.text).toContain("ROSSI")
-    expect(risultato.text).toContain("MARIO")
+    // Nessun dato anagrafico va compilato — sezione "CONTRIBUENTE" lasciata
+    // in bianco su richiesta esplicita di Paolo (non sempre sa con certezza
+    // chi sia la persona tenuta al pagamento).
+    expect(risultato.text).not.toContain("RSSMRA80A01H501U")
     expect(risultato.text).toContain("TVE00001A")
     expect(risultato.text).toContain("TVE00002B")
     expect(risultato.text).toContain("2813")

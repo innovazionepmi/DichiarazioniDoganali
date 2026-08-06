@@ -169,7 +169,27 @@ export async function generaRicevutaInvioPdf(input: RicevutaInvioInput): Promise
     ["", "", "", "", "", "TOTALE", totaleA]
   )
 
-  // --- Pagina 3: Quadro G (se presente) ---
+  // --- Pagina 3: Quadro C (autoconsumo esente) ---
+  const p3c = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT])
+  bordoPagina(p3c)
+  let y3c = PAGE_HEIGHT - 70
+  centrato(p3c, helveticaBold, "QUADRO C — CONSUMI PROPRI ESENTI", y3c, 12)
+  y3c -= 30
+
+  const righeC: RigaTabella[] = input.dati.quadroC.map((mese) => [mese.numMese, "L2", mese.kwh])
+  const totaleC = input.dati.quadroC.reduce((acc, mese) => acc + mese.kwh, 0)
+  disegnaTabella(
+    p3c,
+    helvetica,
+    helveticaBold,
+    y3c,
+    ["Mese", "Tipologia", "kWh"],
+    [60, 90, 65],
+    righeC,
+    ["", "TOTALE", totaleC]
+  )
+
+  // --- Pagina 4: Quadro G (se presente) ---
   if (input.dati.quadroG) {
     const p3 = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT])
     bordoPagina(p3)

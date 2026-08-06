@@ -58,9 +58,10 @@ Governance/workflow Git (branch `main`/`staging`, naming commit, ecc.):
 
 ## Infrastruttura (attiva)
 
-- **Repo GitHub**: `innovazionepmi/DichiarazioniDoganali`, branch `staging` collegato e pushato.
-  Branch `main` **non ha ancora nessun commit** — verrà creato al primo merge da `staging`, dopo validazione esplicita dell'utente (vedi CLAUDE.md).
-- **Vercel**: deploy attivo su `dichiarazioni-doganali.vercel.app` (branch `staging`). Env vars configurate su Vercel (Supabase URL/anon/service-role). `VERCEL_ENV` NON va mai impostata manualmente (è automatica).
+- **Repo GitHub**: `innovazionepmi/DichiarazioniDoganali`, branch `staging` (lavoro quotidiano) e `main` (produzione, creato il 2026-07-30 dal primo merge/release — vedi sotto).
+- **Vercel — 🎉 prima release in produzione (2026-07-30)**: `main` impostato come Production Branch (Project Settings → Environments → Production → Branch Tracking). Produzione live su dominio custom **`dichiarazioni.jouletec.it`** (configurato dall'utente). `staging` continua a generare un **Preview Deployment** separato, con alias stabile per branch:
+  `https://dichiarazioni-doganali-git-staging-innovazionepmis-projects.vercel.app`
+  (si aggiorna ad ogni push su `staging`, indipendente dalla produzione — utile per testare prima di mergiare). Flusso confermato: si lavora sempre su `staging`, si testa sul suo URL preview, poi solo dopo conferma esplicita dell'utente si mergia su `main` (deploy di produzione). Env vars configurate su Vercel (Supabase URL/anon/service-role, Anthropic, Brevo SMTP) — **da verificare che siano abilitate anche per l'ambiente "Preview"**, non solo "Production", altrimenti staging potrebbe non funzionare pur essendo online. `VERCEL_ENV` NON va mai impostata manualmente (è automatica).
 - **Supabase**: progetto creato e collegato, migration applicate manualmente dall'utente via SQL Editor (non tramite `supabase db push` — l'ambiente Claude Code non ha login CLI Supabase). Migration `20260714090001`→`20260714090006` (Fase 2 parte 1: indirizzi strutturati, letture, documenti) **applicate e verificate end-to-end in staging**. Le migration successive vanno applicate quando arrivano (nessuna nuova migration nella parte 2, riusa lo schema esistente).
 - **Materiali cliente reali**: ricevuti e letti (cartella locale `File-reali-esempio`, OneDrive di Emilio) — PDF E-distribuzione, licenza, F24 facsimile, dichiarazione doganale esempio, esito protocollo TXT, Excel storico calcoli. **Non copiare mai dati/nomi reali del cliente finale in file committati** (vedi "Bug importanti" più sotto — è già successo una volta con i test).
 
@@ -1220,6 +1221,123 @@ per il calcolo di registro/riconciliazione usato nella sezione Letture e
 nel registro letture PDF, oltre a essere un dato obbligatorio del tracciato
 XML verso ADM.
 
+## Compliance: Quadro C aggiunto alla dichiarazione XML (2026-07-31)
+
+**Gap di conformità reale, trovato e chiuso**. Verifica approfondita
+richiesta esplicitamente dall'utente dopo l'uscita della **Circolare
+20/2026** ("chiarimenti dichiarazioni semestrali"), incrociata con
+l'Allegato 4 (istruzioni officine, Circolare 9/2026) e l'Allegato 1
+(Circolare 6/2026, elenco codici uso).
+
+- **Cosa mancava**: la tabella ufficiale dell'Allegato 4 elenca **A, C, G,
+  L** per il profilo "Officina di produzione da fonti rinnovabili uso
+  proprio esente" (il profilo tipico dei clienti di Paolo). La Circolare
+  20/2026 ha corretto solo un refuso sulla **L** (non richiesta) — non ha
+  toccato la **C**, che quindi resta un quadro effettivamente dovuto. Il
+  nostro generatore produceva solo A+G: **mancava il Quadro C**
+  ("Consumi propri esenti / non sottoposti ad accisa" — cioè l'autoconsumo).
+- **Perché non si era notato prima**: la ricerca precedente si era
+  concentrata sull'esenzione dal "prospetto J-L-M" (liquidazione
+  dell'accisa sulle cessioni a consumatori finali — non applicabile ai
+  clienti di Paolo), un discorso distinto e separato dalla *rappresentazione*
+  dell'autoconsumo in sé (Quadro C), dovuta a prescindere da eventuali
+  vendite a terzi.
+- **Perché il test reale precedente (codice 200, il miglior esito
+  possibile) non lo aveva rivelato**: il controllo automatico ADM in fase
+  di invio verifica principalmente lo schema XSD e alcune regole di
+  business, non necessariamente "hai compilato tutti i quadri dovuti per il
+  tuo profilo di officina" — quel tipo di completezza sostanziale può
+  essere verificato solo in un secondo momento (audit), non bloccante
+  all'invio.
+- **Come si compila** (Circolare 20/2026, punto 1): quando l'energia per
+  uso proprio non è misurata da un contatore dedicato ma calcolata per
+  differenza tra produzione e cessione (il caso di Paolo — non c'è un
+  contatore "autoconsumo"), **non vanno compilati matricola/letture/
+  costante**, solo il **kWh calcolato** per mese. Il valore è esattamente
+  l'autoconsumo già calcolato da `autoconsumoMensile()`
+  (`lib/calc/registro.ts`), finora usato solo per l'alert a schermo in
+  `/letture`, mai scritto nella dichiarazione.
+- **Codice uso**: `L2` (Allegato 1, Circolare 6/2026 — "Energia elettrica
+  prodotta con impianti azionati da fonti rinnovabili... con potenza
+  disponibile superiore a 20 kW, consumata dalle imprese di autoproduzione
+  in locali e luoghi diversi dalle abitazioni"). Il vincolo "potenza > 20
+  kW" non richiede una verifica impianto per impianto: un impianto ≤20kW
+  che non vende a consumatori finali non sarebbe nemmeno tenuto a questa
+  dichiarazione (Allegato 4, nota 2) — se un cliente la presenta con questo
+  profilo, il suo impianto è per definizione sopra quella soglia.
+- **Granularità mensile confermata** (non un valore unico di periodo): sia
+  dallo XSD (`ContatoriEsentiType`, stessa struttura per-mese del Quadro A,
+  `Mese` `maxOccurs="6"` + `TotaleMese` + `TotaleQuadro`) sia dal testo
+  delle istruzioni ("l'unica integrazione [rispetto alle vecchie
+  dichiarazioni annuali] è la suddivisione mensile dei consumi").
+
+**Implementato**:
+- `lib/validation/dichiarazione-ee.schema.ts`: nuovo `quadroC` (6 mesi,
+  ciascuno con solo `kwh`), **obbligatorio** (a differenza di `quadroG` che
+  resta nullable per impianti senza contatore di immissione — l'autoconsumo
+  invece è sempre applicabile).
+- `lib/xml/dichiarazione-ee-semestrale.ts`: `quadroCXml()` — `<Matr></Matr>`
+  vuoto (l'elemento resta presente, richiesto dallo XSD, ma
+  `matricolaType` ammette stringa vuota), `Tipologia` fissa `L2`, nessuna
+  lettura/costante. Ordine elementi corretto per XSD: `Dich, Periodo, A, C,
+  G` (C **tra** A e G, non dopo). Parser inverso (`parseDichiarazioneEeSemestraleXml`)
+  aggiornato per il round-trip.
+- `lib/actions/dichiarazioni.ts`: `quadroC` calcolato come
+  `produzioneTot − immissioneTot` per mese, riusando le stesse righe già
+  calcolate per A/G (nessuna nuova query). **Guard nuovo**: se l'autoconsumo
+  di un mese risulta negativo (immissione > produzione — anomalia nei
+  dati, K/lettura probabilmente sbagliati), la generazione si blocca con un
+  errore esplicito invece di scrivere un kWh negativo che l'XSD
+  rifiuterebbe comunque.
+- `components/impianti/invio-dichiarazione-dialog.tsx`: nuova tabella
+  Quadro C nella schermata di riepilogo pre-invio (tra A e G).
+- `lib/pdf/ricevuta-invio-generator.ts`: nuova pagina Quadro C nella
+  ricevuta PDF (tra A e G).
+- Test aggiornati: `lib/xml/dichiarazione-ee-semestrale.test.ts` (nuovo
+  test sull'ordine A/C/G, Matr vuoto, Tipologia L2, round-trip),
+  `lib/xml/dichiarazione-test-fittizia.ts` (quadroC aggiunto ai dati
+  fittizi della sandbox `/impostazioni`).
+- **Verificato**: `tsc`, `test` (61 test), `lint` puliti. XML generato
+  ispezionato manualmente (struttura, ordine elementi, Matr vuoto,
+  Tipologia L2, totali) — corretto.
+
+**Non ancora verificato con Paolo/ADM**: questa è la mia lettura tecnica
+delle circolari, non una consulenza fiscale — prima di un invio reale con
+Quadro C, sarebbe bene una controfirma di Paolo o del suo consulente
+fiscale sul codice `L2` e sull'applicabilità a tutti gli impianti del
+portafoglio (in teoria uniforme per il profilo "autoconsumo + eccedenza",
+ma non verificato caso per caso).
+
+## F24: rimossa la compilazione della sezione anagrafica (2026-07-31)
+
+Richiesta esplicita di Paolo (tramite l'utente): la sezione
+"CONTRIBUENTE"/"DATI ANAGRAFICI"/"DOMICILIO FISCALE" del modulo F24 non va
+più precompilata — non è mai sicuro con certezza di chi sia effettivamente
+la persona tenuta al pagamento, meglio lasciarla in bianco e farla
+compilare a mano da chi paga davvero. Resta tutto il resto (sezione
+Accise/Monopoli, totali, saldo, data di versamento).
+
+- `lib/pdf/f24-generator.ts`: rimossi `F24ReferenteInput`, il campo
+  `referente` da `F24Input`, e tutte le chiamate `drawText`/`drawChars` per
+  codice fiscale/cognome/nome/data e comune di nascita/domicilio.
+- `lib/pdf/f24-coordinates.ts`: rimosse le coordinate ormai inutilizzate
+  (restano in `git log` se mai servisse ripristinarle).
+- `lib/actions/f24.ts`: rimossa la validazione `CAMPI_REFERENTE_OBBLIGATORI`
+  (bloccava la generazione se mancavano dati anagrafici del referente, ora
+  mai usati) — la select su `clienti` per `generaF24` ora prende solo
+  `id, ragione_sociale, referente_domicilio_provincia` (quest'ultimo resta,
+  serve solo come fallback per la provincia dell'impianto nella sezione
+  Accise se `impianti.indirizzo_provincia` non è compilato — non è dato
+  anagrafico stampato sul modulo).
+- `lib/pdf/f24-generator.test.ts` aggiornato (verifica che il codice
+  fiscale non compaia più nel testo estratto dal PDF).
+- **Verificato**: `tsc`, `test`, `lint` puliti. PDF generato e
+  rasterizzato per controllo visivo — sezione anagrafica vuota, resto
+  compilato correttamente.
+- **Non toccato**: i campi `referente_*` restano nell'anagrafica cliente
+  (form, schema, DB) — potrebbero servire per altro (email al cliente,
+  ecc.); rimossa solo la compilazione sul PDF F24.
+
 ## Verifica esterna (Energix) su scadenze e periodicità
 
 Paolo ha girato due articoli di Energix
@@ -1333,10 +1451,11 @@ test + CA root ADM già caricati e verificati. Quello che resta:
 6. Se un cliente ha più impianti con diritto di licenza di quanti ne entrano
    nel modulo F24 (stimato 6 righe), dimmelo: il codice al momento tronca le
    righe in eccesso, va deciso se passare alla generazione multi-pagina.
-7. Quando tutto funziona: dammi conferma esplicita e ti guido nel merge
-   `staging` → `main` (primo deploy di produzione) — non è necessario
-   aspettare che l'invio reale sia collegato per farlo, se preferisci
-   procedere prima.
+7. ~~Quando tutto funziona: dammi conferma esplicita e ti guido nel merge
+   staging → main~~ **Fatto (2026-07-30)** — `main` creato, Production
+   Branch su Vercel impostato su `main`, dominio custom
+   `dichiarazioni.jouletec.it` configurato. Prossimo passo: dare accesso a
+   Paolo per farlo sperimentare in produzione.
 8. Quando sarete pronti per l'invio reale (non di test), chiedi a Paolo
    anche il **certificato client di produzione** (per ora ha solo il CA
    root di quell'ambiente) — stesso percorso PUDM già usato per quello di
@@ -1388,6 +1507,7 @@ test + CA root ADM già caricati e verificati. Quello che resta:
 - Email finale al cliente (brief §5.8): `inviaRicevutaClienteEmail` in `lib/actions/dichiarazioni.ts`, UI in `components/impianti/dichiarazione-section.tsx`, migration `supabase/migrations/20260721090001_dichiarazione_email_cliente.sql`
 - Test invio email da /impostazioni: `listaDichiarazioniInviate` in `lib/actions/dichiarazioni.ts`, UI `components/impostazioni/test-email-cliente-section.tsx`
 - Registro letture vuoto via email: `inviaRegistroLettureVuotoEmail` in `lib/actions/registro-letture.ts`, UI in `components/impianti/registro-letture-section.tsx`
+- Quadro C (autoconsumo, compliance): `quadroCXml`/`mesiQuadroC` in `lib/xml/dichiarazione-ee-semestrale.ts`, `meseQuadroCSchema` in `lib/validation/dichiarazione-ee.schema.ts`, calcolo in `lib/actions/dichiarazioni.ts` (`generaDichiarazioneSemestrale`)
 - Log invii email: logging centralizzato in `lib/email/client.ts`, azione `lib/actions/email-log.ts`, UI `components/impostazioni/log-email-section.tsx`, migration `supabase/migrations/20260721100001_email_log.sql`
 - Correzioni meeting 27/07 (registro fedele al modello ADM, lettura iniziale, importo fattura): `lib/pdf/registro-letture-generator.ts` (+ logo in `lib/pdf/templates/logo-agenzia-dogane.jpg`), `components/letture/letture-table.tsx` (+ `aggiornaLetturaIniziale` in `lib/actions/letture.ts`), `ultimoGiornoMese` in `lib/calc/registro.ts`, `aggiornaImportoFattura` in `lib/actions/tracking.ts`, migration `supabase/migrations/20260727120001_tracking_fatture_importo.sql`
 - Setup locale: [`README.md`](./README.md)

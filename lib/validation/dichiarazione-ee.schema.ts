@@ -59,12 +59,27 @@ const meseQuadroGSchema = z.object({
   contatori: z.array(contatoreCedutaRigaSchema).min(1),
 })
 
+// Quadro C — Consumi propri esenti (autoconsumo da fonte rinnovabile, art. 52
+// comma 3 lett. b) TUA). Misurato "per differenza" (produzione − immissione,
+// non da un contatore dedicato): Circolare 20/2026 punto 1 dice di non
+// compilare matricola/letture/costante in questo caso — qui non li
+// includiamo proprio, solo il kWh calcolato e la Tipologia fissa "L2"
+// (Allegato 1 Circolare 6/2026: "energia elettrica prodotta con impianti
+// azionati da fonti rinnovabili... consumata dalle imprese di
+// autoproduzione"). Un solo codice uso coperto — l'unico caso applicabile al
+// profilo "officina di produzione da fonti rinnovabili uso proprio esente".
+const meseQuadroCSchema = z.object({
+  numMese: z.number().int().min(1).max(12),
+  kwh: kwhSchema,
+})
+
 export const dichiarazioneEeSemestraleSchema = z.object({
   codDitta: codiceDittaSchema,
   codAtt: z.literal(1), // officina produzione fonti rinnovabili uso proprio esente
   anno: z.number().int().min(2026),
   periodoRiferimento: z.union([z.literal(1), z.literal(2)]),
   quadroA: z.array(meseQuadroASchema).length(6, "Il Quadro A deve avere esattamente 6 mesi"),
+  quadroC: z.array(meseQuadroCSchema).length(6, "Il Quadro C deve avere esattamente 6 mesi"),
   quadroG: z
     .array(meseQuadroGSchema)
     .length(6, "Il Quadro G deve avere esattamente 6 mesi")

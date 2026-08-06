@@ -11,24 +11,12 @@
 // contribuente): le coordinate sono le stesse su tutte e 3 le pagine.
 
 export const F24_COORD = {
-  codiceFiscale: {
-    // 16 caselle, una per carattere
-    xs: [119, 133, 147, 162, 176, 190, 204, 218, 232, 247, 261, 275, 289, 303, 317, 332],
-    y: 724,
-  },
-  cognome: { x: 116, y: 701 },
-  nome: { x: 420, y: 701 },
-  dataNascita: {
-    // giorno(2) mese(2) anno(4) = 8 caselle
-    xs: [119, 133, 147, 161, 176, 190, 204, 217],
-    y: 674,
-  },
-  sesso: { x: 247, y: 674 },
-  comuneNascita: { x: 275, y: 674 },
-  provinciaNascita: { xs: [543, 556], y: 674 },
-  domicilioComune: { x: 116, y: 653 },
-  domicilioProvincia: { xs: [332, 347], y: 653 },
-  domicilioVia: { x: 369, y: 653 },
+  // Sezione "CONTRIBUENTE" (anagrafica: codice fiscale, cognome/nome, data
+  // e comune di nascita, domicilio) deliberatamente non compilata — richiesta
+  // esplicita di Paolo: non è mai sicuro di chi sia effettivamente la
+  // persona tenuta al pagamento, meglio lasciare quella sezione in bianco e
+  // farla compilare a mano da chi paga davvero. Le coordinate misurate sono
+  // rimaste in `git log` se mai servisse ripristinarle.
 
   // Sezione Accise/Monopoli: righe verso il basso, passo 12pt. Nell'esempio
   // reale erano visibili 3 righe piene; il modulo ufficiale potrebbe averne

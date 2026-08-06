@@ -157,6 +157,28 @@ export async function generaDichiarazioneSemestrale(
   const righeProduzionePerMese = contatoriProduzione.map(rigaContatore)
   const righeCessionePerMese = contatoriImmissione.map(rigaContatore)
 
+  // Quadro C — autoconsumo esente da fonte rinnovabile (Allegato 4, brief
+  // §5.8: profilo "officina di produzione da fonti rinnovabili uso proprio
+  // esente" richiede A, C, G — la circolare 20/2026 ha corretto solo il
+  // refuso sul Quadro L, non ha toccato C). Misurato "per differenza"
+  // (produzione − immissione), non da un contatore dedicato — coerente con
+  // Circolare 20/2026 punto 1. Un autoconsumo negativo (immissione >
+  // produzione) è un'anomalia nei dati, non un caso legittimo da dichiarare:
+  // stesso alert già mostrato in /letture, qui blocca la generazione invece
+  // di lasciar passare un valore che l'XSD non accetterebbe comunque
+  // (kWh non può essere negativo).
+  const quadroC = mesi.map((periodo, i) => {
+    const produzioneTot = righeProduzionePerMese.reduce((acc, righe) => acc + righe[i].kwh, 0)
+    const immissioneTot = righeCessionePerMese.reduce((acc, righe) => acc + righe[i].kwh, 0)
+    const autoconsumo = produzioneTot - immissioneTot
+    if (autoconsumo < 0) {
+      campiMancanti.push(
+        `autoconsumo negativo nel mese ${String(periodo.mese).padStart(2, "0")}/${periodo.anno} (immissione maggiore della produzione: controlla le letture)`
+      )
+    }
+    return { numMese: periodo.mese, kwh: autoconsumo }
+  })
+
   if (campiMancanti.length > 0) {
     return {
       error: `Dati incompleti per generare la dichiarazione: ${Array.from(new Set(campiMancanti)).join("; ")}.`,
@@ -197,6 +219,7 @@ export async function generaDichiarazioneSemestrale(
     anno,
     periodoRiferimento,
     quadroA,
+    quadroC,
     quadroG,
   })
   if (!parsed.success) {

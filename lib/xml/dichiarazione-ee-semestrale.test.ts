@@ -64,6 +64,7 @@ const INPUT_SINTETICO: DichiarazioneEeSemestraleInput = {
   anno: 2026,
   periodoRiferimento: 1,
   quadroA: KWH_PRODUZIONE.map((kwh, i) => meseA(i + 1, lettPProduzione[i], kwh)),
+  quadroC: KWH_PRODUZIONE.map((kwh, i) => ({ numMese: i + 1, kwh: kwh - KWH_CESSIONE[i] })),
   quadroG: KWH_CESSIONE.map((kwh, i) => meseG(i + 1, lettPCessione[i], kwh)),
 }
 
@@ -98,6 +99,18 @@ describe("generaDichiarazioneEeSemestraleXml", () => {
     expect(xml.split("<A>")[1].split("</A>")[0]).toContain(
       `<TotaleQuadro>${totaleA}</TotaleQuadro>`
     )
+  })
+
+  it("scrive il Quadro C tra A e G con Matr vuoto e Tipologia L2", () => {
+    const xml = generaDichiarazioneEeSemestraleXml(INPUT_SINTETICO)
+    expect(xml.indexOf("<A>")).toBeLessThan(xml.indexOf("<C>"))
+    expect(xml.indexOf("<C>")).toBeLessThan(xml.indexOf("<G>"))
+    expect(xml).toContain("<Matr></Matr>")
+    expect(xml).toContain("<Tipologia>L2</Tipologia>")
+    // Mese 1: autoconsumo = 100 (produzione) − 40 (cessione) = 60
+    expect(xml.split("<C>")[1].split("</C>")[0]).toContain("<kWh>60</kWh>")
+    const totaleC = KWH_PRODUZIONE.reduce((a, b) => a + b, 0) - KWH_CESSIONE.reduce((a, b) => a + b, 0)
+    expect(xml.split("<C>")[1].split("</C>")[0]).toContain(`<TotaleQuadro>${totaleC}</TotaleQuadro>`)
   })
 
   it("scrive il Quadro G con Tipo B, Id e Kwh (K maiuscola)", () => {
@@ -162,6 +175,8 @@ describe("parseDichiarazioneEeSemestraleXml", () => {
         { matricola: "PROD001", lettA: 100, lettP: 0, diffLett: 100, costLett: 1, kwh: 100 },
       ],
     })
+    expect(parsed.quadroC).toHaveLength(6)
+    expect(parsed.quadroC[0]).toEqual({ numMese: 1, kwh: 60 })
     expect(parsed.quadroG).toHaveLength(6)
     expect(parsed.quadroG![0]).toEqual({
       numMese: 1,
