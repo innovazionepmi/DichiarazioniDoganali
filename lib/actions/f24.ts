@@ -8,19 +8,6 @@ import { f24GenerazioneSchema, type F24GenerazioneInput } from "@/lib/validation
 
 export type ActionResult = { error?: string } | void
 
-const CAMPI_REFERENTE_OBBLIGATORI = [
-  "referente_cognome",
-  "referente_nome",
-  "referente_codice_fiscale",
-  "referente_data_nascita",
-  "referente_sesso",
-  "referente_comune_nascita",
-  "referente_provincia_nascita",
-  "referente_domicilio_via",
-  "referente_domicilio_citta",
-  "referente_domicilio_provincia",
-] as const
-
 export type GeneraF24Result =
   | { error: string }
   | { f24GenerazioneId: string; pdfBase64: string; nomeFile: string }
@@ -44,22 +31,11 @@ export async function generaF24(input: F24GenerazioneInput): Promise<GeneraF24Re
 
   const { data: cliente, error: clienteError } = await supabase
     .from("clienti")
-    .select(
-      "id, ragione_sociale, referente_cognome, referente_nome, referente_codice_fiscale, referente_data_nascita, referente_sesso, referente_comune_nascita, referente_provincia_nascita, referente_domicilio_via, referente_domicilio_citta, referente_domicilio_provincia"
-    )
+    .select("id, ragione_sociale, referente_domicilio_provincia")
     .eq("id", parsed.data.clienteId)
     .single()
 
   if (clienteError || !cliente) return { error: clienteError?.message ?? "Cliente non trovato" }
-
-  const campiMancanti = CAMPI_REFERENTE_OBBLIGATORI.filter(
-    (campo) => !cliente[campo as keyof typeof cliente]
-  )
-  if (campiMancanti.length > 0) {
-    return {
-      error: `Dati del referente incompleti per l'F24 (sezione "Dati per F24" nella scheda cliente): mancano ${campiMancanti.join(", ")}.`,
-    }
-  }
 
   const impiantoIds = parsed.data.righe.map((r) => r.impiantoId)
   const { data: impianti, error: impiantiError } = await supabase
@@ -84,18 +60,6 @@ export async function generaF24(input: F24GenerazioneInput): Promise<GeneraF24Re
   })
 
   const pdfBytes = await generaF24Pdf({
-    referente: {
-      codiceFiscale: cliente.referente_codice_fiscale!,
-      cognome: cliente.referente_cognome!,
-      nome: cliente.referente_nome!,
-      dataNascita: cliente.referente_data_nascita!,
-      sesso: cliente.referente_sesso as "M" | "F",
-      comuneNascita: cliente.referente_comune_nascita!,
-      provinciaNascita: cliente.referente_provincia_nascita!,
-      domicilioComune: cliente.referente_domicilio_citta!,
-      domicilioProvincia: cliente.referente_domicilio_provincia!,
-      domicilioVia: cliente.referente_domicilio_via!,
-    },
     righe: righeConDati.map((r) => ({
       provinciaImpianto: r.provinciaImpianto,
       codiceIdentificativo: r.codiceIdentificativo,
