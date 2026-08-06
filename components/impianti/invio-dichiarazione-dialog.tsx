@@ -185,6 +185,32 @@ export function InvioDichiarazioneDialog({
                 </div>
               </div>
 
+              <div>
+                <p className="mb-1 text-sm font-medium">
+                  Quadro C — Consumi propri esenti (autoconsumo)
+                </p>
+                <div className="overflow-x-auto rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Mese</TableHead>
+                        <TableHead>Tipologia</TableHead>
+                        <TableHead className="text-right">kWh</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {riepilogo.dati.quadroC.map((mese) => (
+                        <TableRow key={`C-${mese.numMese}`}>
+                          <TableCell>{mese.numMese}</TableCell>
+                          <TableCell>L2</TableCell>
+                          <TableCell className="text-right">{mese.kwh}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
+
               {riepilogo.dati.quadroG && (
                 <div>
                   <p className="mb-1 text-sm font-medium">Quadro G — Cessione alla rete</p>

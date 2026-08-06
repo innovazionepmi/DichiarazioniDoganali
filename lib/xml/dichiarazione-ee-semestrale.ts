@@ -78,6 +78,32 @@ function contatoreCedutaXml(c: ContatoreCedutaRiga): string {
   )
 }
 
+// Tipologia fissa "L2" (Allegato 1 Circolare 6/2026): unico codice uso
+// coperto per il profilo "officina di produzione da fonti rinnovabili uso
+// proprio esente". Matr vuoto e nessuna lettura/costante: misurato "per
+// differenza" (Circolare 20/2026 punto 1), non da un contatore dedicato.
+const TIPOLOGIA_QUADRO_C = "L2"
+
+function quadroCXml(mesi: DichiarazioneEeSemestraleInput["quadroC"]): string {
+  const meseNodi = mesi
+    .map((mese) => {
+      const kwh = formatKwh(mese.kwh)
+      return (
+        `<Mese NumMese="${mese.numMese}">` +
+        `<Contatore>` +
+        el("Matr", "") +
+        el("kWh", kwh) +
+        el("Tipologia", TIPOLOGIA_QUADRO_C) +
+        `</Contatore>` +
+        el("TotaleMese", kwh) +
+        `</Mese>`
+      )
+    })
+    .join("")
+  const totaleQuadro = mesi.reduce((acc, mese) => acc + Math.round(mese.kwh), 0)
+  return `<C>${meseNodi}${el("TotaleQuadro", formatKwh(totaleQuadro))}</C>`
+}
+
 function quadroAXml(mesi: DichiarazioneEeSemestraleInput["quadroA"]): string {
   const meseNodi = mesi
     .map((mese) => {
@@ -122,14 +148,18 @@ export function generaDichiarazioneEeSemestraleXml(input: DichiarazioneEeSemestr
   const dich = `<Dich>${el("CodDitta", parsed.codDitta)}${el("CodAtt", String(parsed.codAtt))}</Dich>`
   const periodo = `<Periodo>${el("Anno", String(parsed.anno))}${el("PeriodoRiferimento", String(parsed.periodoRiferimento))}</Periodo>`
   const quadroA = quadroAXml(parsed.quadroA)
+  const quadroC = quadroCXml(parsed.quadroC)
   const quadroG = parsed.quadroG ? quadroGXml(parsed.quadroG) : ""
 
+  // Ordine elementi vincolato dallo XSD (EE_ComplexTypes_Semestrale.xsd):
+  // Dich, Periodo, A, C, ..., G — il Quadro C va tra A e G, non dopo.
   return (
     `<?xml version="1.0" encoding="UTF-8"?>` +
     `<EnergiaElettricaSemestrale xmlns="${NAMESPACE}">` +
     dich +
     periodo +
     quadroA +
+    quadroC +
     quadroG +
     `</EnergiaElettricaSemestrale>`
   )
@@ -181,12 +211,21 @@ export function parseDichiarazioneEeSemestraleXml(xml: string): DichiarazioneEeS
     }))
   }
 
+  function mesiQuadroC(quadro: Record<string, unknown> | undefined) {
+    const mesi = (quadro?.Mese ?? []) as Record<string, unknown>[]
+    return mesi.map((mese) => {
+      const contatori = mese.Contatore as Record<string, unknown>[]
+      return { numMese: Number(mese["@_NumMese"]), kwh: Number(contatori[0].kWh) }
+    })
+  }
+
   return dichiarazioneEeSemestraleSchema.parse({
     codDitta: String(root.Dich.CodDitta),
     codAtt: Number(root.Dich.CodAtt),
     anno: Number(root.Periodo.Anno),
     periodoRiferimento: Number(root.Periodo.PeriodoRiferimento),
     quadroA: mesiQuadro(root.A, contatoreProduzione),
+    quadroC: mesiQuadroC(root.C),
     quadroG: root.G ? mesiQuadro(root.G, contatoreCeduta) : null,
   })
 }

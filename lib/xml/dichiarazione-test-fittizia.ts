@@ -47,6 +47,10 @@ export function generaXmlDichiarazioneTestFittizia({
         },
       ],
     })),
+    quadroC: kwhProduzione.map((kwh, i) => ({
+      numMese: meseIniziale + i,
+      kwh: kwh - kwhCessione[i], // autoconsumo = produzione − cessione alla rete
+    })),
     quadroG: kwhCessione.map((kwh, i) => ({
       numMese: meseIniziale + i,
       contatori: [
