@@ -354,7 +354,7 @@ export function ImpiantoForm({
             name="ufficio_amministrativo"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Ufficio amministrativo</FormLabel>
+                <FormLabel>Sede Agenzia Dogane</FormLabel>
                 <FormControl>
                   <Input {...field} />
                 </FormControl>
