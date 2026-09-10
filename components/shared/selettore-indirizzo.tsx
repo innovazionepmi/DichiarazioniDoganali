@@ -5,12 +5,18 @@ import type { FieldValues, Path, UseFormReturn } from "react-hook-form"
 import { cercaProvince, cercaComuniPerProvincia, type Provincia, type Comune } from "@/lib/actions/comuni"
 import { Input } from "@/components/ui/input"
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+  Combobox,
+  ComboboxClear,
+  ComboboxEmpty,
+  ComboboxInput,
+  ComboboxInputGroup,
+  ComboboxItem,
+  ComboboxList,
+  ComboboxPopup,
+  ComboboxPortal,
+  ComboboxPositioner,
+  ComboboxTrigger,
+} from "@/components/ui/combobox"
 import { FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
 
 // Cache in-memory a livello di modulo: le province sono dati statici,
@@ -18,11 +24,17 @@ import { FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/comp
 // passando da un impianto all'altro nella stessa sessione).
 let provinceCache: Provincia[] | null = null
 
+type ItemProvincia = { value: string; label: string }
+type ItemComune = { value: string; label: string }
+
 // Tendine provincia → comune con auto-popolamento di CAP (e, quando il
 // campo è passato, codice catastale) dalla tabella `comuni` (brief: "può
-// essere auto-popolato da tabella comuni ISTAT/catastale"). Generico sul
-// tipo di form perché è condiviso da ClienteForm e ImpiantoForm, che hanno
-// schemi diversi ma la stessa forma di indirizzo (via/cap/provincia/città).
+// essere auto-popolato da tabella comuni ISTAT/catastale"). Combobox
+// (ricerca testuale) invece di un semplice Select: con 107 province e fino
+// a qualche centinaio di comuni per provincia uno scroll-to-find è
+// scomodo — qui l'operatore digita e filtra. Generico sul tipo di form
+// perché è condiviso da ClienteForm e ImpiantoForm, che hanno schemi
+// diversi ma la stessa forma di indirizzo (via/cap/provincia/città).
 export function SelettoreIndirizzo<T extends FieldValues>({
   form,
   campoProvincia,
@@ -69,7 +81,10 @@ export function SelettoreIndirizzo<T extends FieldValues>({
 
   function selezionaComune(codiceCatastale: string | null) {
     const comune = comuni.find((c) => c.codice_catastale === codiceCatastale)
-    if (!comune) return
+    if (!comune) {
+      form.setValue(campoCitta, "" as never, { shouldDirty: true })
+      return
+    }
     form.setValue(campoCitta, comune.nome as never, { shouldDirty: true })
     form.setValue(campoCap, comune.cap as never, { shouldDirty: true })
     if (campoCodiceCatastale) {
@@ -88,6 +103,22 @@ export function SelettoreIndirizzo<T extends FieldValues>({
 
   const comuneCorrente = comuni.find((c) => c.nome === form.watch(campoCitta))
 
+  const itemsProvincia: ItemProvincia[] = province.map((p) => ({
+    value: p.sigla,
+    label: `${p.nome} (${p.sigla})`,
+  }))
+  const itemsComune: ItemComune[] = comuni.map((c) => ({
+    value: c.codice_catastale,
+    label: c.nome,
+  }))
+  // Value = l'oggetto {value,label} intero (non solo la stringa): è quanto
+  // serve a Combobox per riconoscere automaticamente la forma {value,label}
+  // e mostrare la label nell'input dopo la selezione, invece del valore
+  // grezzo — coerente con isItemEqualToValue qui sotto.
+  const valoreProvincia = itemsProvincia.find((p) => p.value === provinciaSelezionata) ?? null
+  const valoreComune = itemsComune.find((c) => c.value === comuneCorrente?.codice_catastale) ?? null
+  const confrontaItem = (a: { value: string }, b: { value: string }) => a.value === b.value
+
   return (
     <>
       <FormField
@@ -96,24 +127,35 @@ export function SelettoreIndirizzo<T extends FieldValues>({
         render={() => (
           <FormItem>
             <FormLabel>Provincia</FormLabel>
-            <Select
-              value={provinciaSelezionata || undefined}
-              onValueChange={selezionaProvincia}
+            <Combobox
+              items={itemsProvincia}
+              value={valoreProvincia}
+              onValueChange={(item) => selezionaProvincia(item?.value ?? null)}
+              isItemEqualToValue={confrontaItem}
               disabled={disabled}
             >
               <FormControl>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Seleziona provincia" />
-                </SelectTrigger>
+                <ComboboxInputGroup>
+                  <ComboboxInput placeholder="Cerca provincia…" />
+                  <ComboboxClear />
+                  <ComboboxTrigger />
+                </ComboboxInputGroup>
               </FormControl>
-              <SelectContent alignItemWithTrigger={false}>
-                {province.map((p) => (
-                  <SelectItem key={p.sigla} value={p.sigla}>
-                    {p.nome} ({p.sigla})
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              <ComboboxPortal>
+                <ComboboxPositioner>
+                  <ComboboxPopup>
+                    <ComboboxEmpty>Nessuna provincia trovata.</ComboboxEmpty>
+                    <ComboboxList>
+                      {(item: ItemProvincia) => (
+                        <ComboboxItem key={item.value} value={item}>
+                          {item.label}
+                        </ComboboxItem>
+                      )}
+                    </ComboboxList>
+                  </ComboboxPopup>
+                </ComboboxPositioner>
+              </ComboboxPortal>
+            </Combobox>
             <FormMessage />
           </FormItem>
         )}
@@ -124,32 +166,41 @@ export function SelettoreIndirizzo<T extends FieldValues>({
         render={() => (
           <FormItem className="sm:col-span-3">
             <FormLabel>Comune</FormLabel>
-            <Select
-              value={comuneCorrente?.codice_catastale}
-              onValueChange={selezionaComune}
+            <Combobox
+              items={itemsComune}
+              value={valoreComune}
+              onValueChange={(item) => selezionaComune(item?.value ?? null)}
+              isItemEqualToValue={confrontaItem}
               disabled={disabled || !provinciaSelezionata}
             >
               <FormControl>
-                <SelectTrigger className="w-full">
-                  <SelectValue
+                <ComboboxInputGroup>
+                  <ComboboxInput
                     placeholder={
                       provinciaSelezionata
-                        ? "Seleziona comune"
+                        ? "Cerca comune…"
                         : "Seleziona prima la provincia"
                     }
-                  >
-                    {comuneCorrente ? comuneCorrente.nome : (form.watch(campoCitta) as string) || undefined}
-                  </SelectValue>
-                </SelectTrigger>
+                  />
+                  <ComboboxClear />
+                  <ComboboxTrigger />
+                </ComboboxInputGroup>
               </FormControl>
-              <SelectContent alignItemWithTrigger={false}>
-                {comuni.map((c) => (
-                  <SelectItem key={c.codice_catastale} value={c.codice_catastale}>
-                    {c.nome}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              <ComboboxPortal>
+                <ComboboxPositioner>
+                  <ComboboxPopup>
+                    <ComboboxEmpty>Nessun comune trovato.</ComboboxEmpty>
+                    <ComboboxList>
+                      {(item: ItemComune) => (
+                        <ComboboxItem key={item.value} value={item}>
+                          {item.label}
+                        </ComboboxItem>
+                      )}
+                    </ComboboxList>
+                  </ComboboxPopup>
+                </ComboboxPositioner>
+              </ComboboxPortal>
+            </Combobox>
             <FormMessage />
           </FormItem>
         )}
