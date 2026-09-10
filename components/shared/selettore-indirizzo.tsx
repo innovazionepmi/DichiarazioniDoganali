@@ -106,7 +106,7 @@ export function SelettoreIndirizzo<T extends FieldValues>({
                   <SelectValue placeholder="Seleziona provincia" />
                 </SelectTrigger>
               </FormControl>
-              <SelectContent>
+              <SelectContent alignItemWithTrigger={false}>
                 {province.map((p) => (
                   <SelectItem key={p.sigla} value={p.sigla}>
                     {p.nome} ({p.sigla})
@@ -142,7 +142,7 @@ export function SelettoreIndirizzo<T extends FieldValues>({
                   </SelectValue>
                 </SelectTrigger>
               </FormControl>
-              <SelectContent>
+              <SelectContent alignItemWithTrigger={false}>
                 {comuni.map((c) => (
                   <SelectItem key={c.codice_catastale} value={c.codice_catastale}>
                     {c.nome}
