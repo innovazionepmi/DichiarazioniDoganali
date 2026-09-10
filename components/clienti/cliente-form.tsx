@@ -8,6 +8,7 @@ import { clienteSchema, type ClienteInput } from "@/lib/validation/cliente.schem
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
+import { SelettoreIndirizzo } from "@/components/shared/selettore-indirizzo"
 import {
   Select,
   SelectContent,
@@ -371,44 +372,11 @@ export function ClienteForm({
               </FormItem>
             )}
           />
-          <FormField
-            control={form.control}
-            name="indirizzo_cap"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>CAP</FormLabel>
-                <FormControl>
-                  <Input {...field} />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-          <FormField
-            control={form.control}
-            name="indirizzo_provincia"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Provincia</FormLabel>
-                <FormControl>
-                  <Input placeholder="es. TV" maxLength={4} {...field} />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-          <FormField
-            control={form.control}
-            name="indirizzo_citta"
-            render={({ field }) => (
-              <FormItem className="sm:col-span-3">
-                <FormLabel>Città</FormLabel>
-                <FormControl>
-                  <Input {...field} />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
+          <SelettoreIndirizzo
+            form={form}
+            campoProvincia="indirizzo_provincia"
+            campoCitta="indirizzo_citta"
+            campoCap="indirizzo_cap"
           />
         </div>
 

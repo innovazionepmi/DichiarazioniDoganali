@@ -11,7 +11,7 @@ export default async function NuovoImpiantoPage({
   const supabase = await createClient()
   const { data: clienteOptions } = await supabase
     .from("clienti")
-    .select("id, ragione_sociale")
+    .select("id, ragione_sociale, indirizzo_via, indirizzo_cap, indirizzo_citta, indirizzo_provincia")
     .eq("attivo", true)
     .order("ragione_sociale")
 

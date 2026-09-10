@@ -1,0 +1,483 @@
+PROMPT DI SVILUPPO — Applicazione gestione adempimenti produttori fotovoltaici (Cliente: Paolo Rinaldin / Jule Tech)
+Documento di specifica funzionale e tecnica da usare come brief iniziale per lo sviluppo con Claude Code. Ricavato integralmente dalla riunione del 02/07/2026 tra Emilio Zucca Web Strategies e Paolo Rinaldin. Ogni requisito qui riportato proviene da quella conversazione.
+
+
+1. CONTESTO E OBIETTIVO
+Paolo Rinaldin gestisce gli adempimenti fiscali/amministrativi di circa 80–86 impianti fotovoltaici per conto di clienti produttori di energia. Oggi lavora con più file Excel sparsi e procedure manuali. L'obiettivo è costruire un'unica applicazione web con database relazionale che:
+
+Consolidi anagrafiche clienti, impianti, partner e contatori in un DB relazionale ordinato.
+Automatizzi l'invio dell'avviso di pagamento del diritto di licenza (F24 precompilato).
+Generi automaticamente il registro letture precompilato (PDF) da inviare ai clienti a inizio anno.
+Raccolga le letture dai portali di distribuzione (E-distribuzione) tramite più modalità di input.
+Calcoli produzione, immissione e autoconsumo con controlli di validazione.
+Generi il file XML per la dichiarazione all'Agenzia delle Dogane (Quadri A, G, L).
+Componga automaticamente l'email finale al cliente con dichiarazione, protocollo e tabella letture.
+Tracci lo stato di dichiarazioni e fatturazione per non perdere scadenze.
+
+⚠️ Fuori scope in questo brief: sito web/dominio/hosting Hostinger (tema separato).
+
+
+2. STACK TECNOLOGICO
+Usare lo stack standard già in uso:
+
+Frontend/Backend: Next.js (App Router) + TypeScript.
+Database & Auth: Supabase (PostgreSQL + RLS + Supabase Auth).
+Deploy: Vercel.
+Automazioni/orchestrazione (OTP, invio email programmato, parsing): valutare n8n + Claude API dove opportuno.
+Parsing documenti (PDF stampa pagina E-distribuzione, licenza PDF, screenshot): estrazione via Claude API (visione/OCR) e/o parser dedicato.
+Bot CSV esistente: c'è già un bot che legge i CSV di E-distribuzione (con i quarti orari) e calcola i totali mensili. In uno step successivo si potrebbe usare la sua logica, ma in prima battuta meglio e più semplice provare ad utilizzare i file pdf  scaricati da E-distribuzione per ciascun cliente e che riportano, per mese, i “valori di energia” da prendere in considerazione per F1, F2 e F3. F1 F2 e F3 sono fasce da registrare singolarmente ma che poi concorrono al conto totale di energia immessa e energia prelevata. Ti allegherò almeno 1 file pdf reale di esempio: se non te lo allego subito chiedimelo.
+
+Impostare il progetto in modo modulare (moduli: Anagrafiche, Letture, Dichiarazioni, Automazioni/Comunicazioni, Tracking).
+
+
+3. MODELLO DATI (SCHEMA RELAZIONALE)
+3.1 clienti
+Un cliente può avere più impianti.
+
+Campo
+Tipo
+Note
+id
+uuid PK
+
+
+codice_fiscale
+text
+
+
+partita_iva
+text
+
+
+ragione_sociale
+text
+nome della ditta
+codice_licenza
+text
+detto anche "codice ditta" / "codice cedito"; è la licenza delle Dogane come produttore di energia
+referente_nome
+text
+
+
+referente_telefono
+text
+
+
+referente_email
+text
+
+
+referente_data_nascita
+date
+la data di nascita del referente - servirà per compilare l’F24
+indirizzo
+text
+indirizzo del cliente (può differire da quello dell'impianto)
+partner_id
+uuid FK → partner
+nullable; valorizzato se il cliente arriva in subappalto
+credenziali_edistribuzione_user
+text
+tenute aggiornate (cambia spesso la password)
+credenziali_edistribuzione_pwd
+text (cifrato)
+da cifrare (vault/secret), mai in chiaro
+credenziali_gse_user
+text
+non indispensabili al processo, ma archiviate per consultazione
+credenziali_gse_pwd
+text (cifrato)
+
+
+note
+text
+
+
+
+
+Nota subappalto: un cliente è interamente diretto oppure interamente in subappalto. Non esiste il caso misto (un impianto diretto + un altro in subappalto per lo stesso cliente). Quindi l'associazione al partner sta a livello cliente. Deve essere possibile filtrare tutti gli impianti per ditta committente.
+3.2 partner
+Aziende che subappaltano il lavoro a Paolo.
+
+Campo
+Tipo
+Note
+id
+uuid PK
+
+
+ragione_sociale
+text
+
+
+note
+text
+
+
+
+3.3 impianti
+Ogni impianto punta a un cliente. Molte proprietà stanno qui, NON sul cliente.
+
+Campo
+Tipo
+Note
+id
+uuid PK
+
+
+cliente_id
+uuid FK → clienti
+
+
+nome_impianto
+text
+es. "Comune di Motta – elementari", "palazzetto", "medie", "tribune"
+tipo_soggetto
+enum(con_licenza, con_autorizzazione)
+vedi §4.2
+diritto_licenza_dovuto
+boolean
+impostato manualmente da Paolo (dipende dal tipo di licenza/impianto; la macchina non lo può dedurre)
+diritto_licenza_importo
+numeric
+€23,24 oppure €77,47 (in base al tipo di impianto) ma lasciare la possibilità di impostare a mano il valore
+ha_registro_letture
+boolean
+coincide con diritto_licenza_dovuto (chi non paga il diritto non tiene registro)
+indirizzo_impianto
+text
+può differire dall'indirizzo del cliente
+potenza_kw
+numeric
+usata per i controlli di ordine di grandezza
+tipologia
+enum(fotovoltaico, eolico)
+oggi tutti fotovoltaici; predisporre per l'eolico (anche l'eolico fa dichiarazione dogane)
+codice_distributore_zona
+text
+es. Treviso "TVE0014R", ; serve nel Quadro G. Associato all'impianto
+codice_catastale_comune
+text
+es. Treviso "L407"; serve nel Quadro G e L. Può essere auto-popolato da tabella comuni ISTAT/catastale
+ufficio_amministrativo
+text
+ricavato dalla licenza; di norma coincide con l'anagrafica ma non sempre. Deve essere corretto perché popola la dichiarazione
+Codice_impianto_F24
+text
+Codice che verrà usato per popolare il valore “Codice identificativo” nel F24
+note
+text
+campo note libero
+
+
+Predisporre lo schema per l'aggiunta futura di nuovi attributi impianto senza migrazioni distruttive (l'utente potrebbe accorgersi in corso d'opera che serve un dato in più).
+3.4 contatori
+Un impianto può avere più contatori di produzione e più di immissione.
+
+Campo
+Tipo
+Note
+id
+uuid PK
+
+
+impianto_id
+uuid FK → impianti
+
+
+matricola
+text
+identificativo del contatore. NON univoco nel tempo: in caso di sostituzione nasce un nuovo contatore con nuova matricola
+pod
+text
+fondamentale. Dal POD si deduce il tipo: immissione = prefisso IT001E…, produzione = prefisso IT001P…
+tipo
+enum(produzione, immissione)
+derivabile dal POD ma da memorizzare
+costante_k
+numeric
+costante di lettura K (coefficiente). Vedi §4.1 per la semantica esatta
+data_attivazione
+date
+
+
+data_cessazione
+date
+nullable; valorizzata alla sostituzione. Consente la coesistenza temporanea vecchio/nuovo contatore
+modello
+text
+dato secondario (il "codice modello" sul PDF), non identificativo
+note
+text
+
+
+
+3.5 contatori_relazioni (produzione ↔ immissione, molti-a-molti)
+Relazione obbligatoria e non casuale tra contatori di produzione e di immissione dello stesso impianto. Può essere 1:1, 1:molti, molti:1, molti:molti.
+
+Campo
+Tipo
+Note
+id
+uuid PK
+
+
+contatore_produzione_id
+uuid FK → contatori
+
+
+contatore_immissione_id
+uuid FK → contatori
+
+
+
+
+⚠️ Perché è critica: l'autoconsumo si calcola come produzione − immissione. Se si associa la produzione di un contatore all'immissione sbagliata, si sbagliano i conti della dichiarazione. La relazione va rispettata nei calcoli.
+3.6 letture
+Una riga per contatore / periodo.
+
+Campo
+Tipo
+Note
+id
+uuid PK
+
+
+contatore_id
+uuid FK → contatori
+
+
+periodo_mese
+int (1–12)
+mese di riferimento
+periodo_anno
+int
+anno di riferimento
+valore_f1
+numeric
+fascia F1 (dal portale)
+valore_f2
+numeric
+fascia F2
+valore_f3
+numeric
+fascia F3
+valore_periodo
+numeric
+= F1+F2+F3 = energia reale del periodo (valore E-distribuzione)
+origine
+enum(csv, pdf_stampa, screenshot, manuale)
+tracciabilità della fonte
+modificata_manualmente
+boolean
+le letture E-distribuzione non sono sempre affidabili → possibilità di override manuale
+documento_sorgente_id
+uuid FK → documenti
+archivio del file da cui è stata estratta
+
+
+Convenzione date E-distribuzione (importante): E-distribuzione etichetta le letture per mese (non per giorno) e usa la convenzione di inizio mese mentre Paolo ragiona a fine mese (per loro "gennaio"/01-01 corrisponde al 31-12). Gestire la trasposizione in modo esplicito e documentato per non sfasare i periodi.
+3.7 dichiarazioni (tracking)
+Campo
+Tipo
+Note
+id
+uuid PK
+
+
+impianto_id
+uuid FK
+
+
+anno
+int
+
+
+semestre
+enum(primo, secondo, annuale)
+annuale per i soggetti con autorizzazione
+stato_invio
+enum(da_fare, xml_generato, inviata, protocollata)
+
+
+protocollo_txt_id
+uuid FK → documenti
+file TXT di protocollo
+ricevuta_pdf_id
+uuid FK → documenti
+PDF di ricezione
+fatturata
+boolean
+
+
+importo_fattura
+numeric
+
+
+note
+text
+
+
+
+3.8 documenti
+Archivio file (licenze PDF, F24 facsimile, PDF stampa E-distribuzione, screenshot, verbali di sostituzione, dichiarazioni, protocolli). Storage su Supabase Storage con metadati (tipo, impianto/contatore collegato, data).
+
+
+4. REGOLE DI BUSINESS CRITICHE
+4.1 Costante di lettura K — semantica esatta (ATTENZIONE, controintuitivo)
+Ogni contatore ha una K (es. K=25).
+I valori di energia forniti da E-distribuzione sono valori "reali" (energia effettiva del periodo).
+Per ottenere la lettura in formato registro/contatore si DIVIDE per K: lettura_registro[mese] = lettura_registro[mese_precedente] + (valore_periodo / K) dove valore_periodo = F1+F2+F3.
+Nella dichiarazione doganale invece si inseriscono le due letture (attuale e precedente) e il sistema calcola l'energia MOLTIPLICANDO per K: energia_kWh = (lettura_attuale − lettura_precedente) × K × 1
+Coerenza: il contatore "comprime" i numeri (dividere per K), l'energia reale si riottiene moltiplicando per K. Implementare con attenzione: è stato un punto di confusione anche in riunione.
+4.2 Due tipologie di soggetto
+Obbligato con licenza (la maggioranza):
+Paga il diritto di licenza (€23,24 o €77,47).
+Tiene il registro letture.
+Dichiarazione semestrale.
+Compila Quadro A + Quadro G + Quadro L.
+Obbligato con autorizzazione (quelli "senza diritto di licenza"):
+Non paga diritto di licenza, non tiene registro.
+Dichiarazione annuale (non semestrale).
+Tutta la produzione è immessa in rete → autoconsumo = 0 → niente Quadro L (solo A e G).
+Trattarli con lo stesso criterio degli altri (è più semplice non differenziare la logica: produzione ≈ immissione).
+4.3 Periodicità dichiarazioni (nuova normativa)
+Dichiarazione semestrale per i soggetti con licenza.
+Finestre di invio: 1 luglio–30 settembre (dati 1° semestre gennaio–giugno) e 1 gennaio–31 marzo (dati 2° semestre luglio–dicembre).
+Annuale per i soggetti con autorizzazione.
+Quadri A e G = valore globale del periodo (semestrale); Quadro L = mensile.
+4.4 POD
+Immissione: POD che inizia con IT001E…
+Produzione: POD che inizia con IT001P…
+Il POD è l'identificativo affidabile per collegare correttamente i dati al contatore.
+4.5 Andamento atteso dei valori (per validazione)
+Produzione: andamento gaussiano (più alta d'estate, più bassa d'inverno).
+Immissione: tipicamente incrementale/crescente nella rappresentazione a lettura progressiva.
+Autoconsumo: mai negativo → se negativo, è un errore di dati/calcolo.
+
+
+5. MODULI FUNZIONALI
+5.1 Anagrafiche
+CRUD completo su clienti, impianti, partner, contatori e relazioni produzione↔immissione.
+Filtro impianti per ditta committente/partner.
+Editing manuale sempre possibile (correzione errori).
+
+Onboarding nuovo cliente da licenza PDF
+
+Upload del PDF della licenza → estrazione automatica dei dati per precompilare la scheda cliente/impianto.
+Paolo verifica e corregge manualmente prima del salvataggio.
+5.2 Diritto di licenza (F24)
+A fine novembre (finestra pagamento 1–16 dicembre), il sistema prepara l'invio ai soli impianti con diritto_licenza_dovuto = true.
+Genera l'F24 precompilato per ciascuno. Campi F24: ente (D), provincia (dai dati cliente), codice licenza, codice tributo (fisso - 2813), importo (23,24 o 77,47).
+Nella scheda cliente serve un pulsante che genera l’F24. deve chiedere di impostare l’anno di riferimento e di scrivere l’importo a debito. Nel F24 deve essere compilata una riga per ciascun impianto, il tutto nella sezione “Accise/monopoli”. I dati anagrafici in testa al F24 sono i dati della persona proprietaria dell’impianto (tabella clienti da dove prendere il codice fiscale e il nome e cognome del referente). La richiesta di compilazione del F24 deve anche chiedere la data di scadenza daimpostare nelmodulo F24 (in basso a sinistra nel modulo)
+Conferma manuale obbligatoria: Generato F24, l’app deve consentire di scaricarlo. Paolo lo scarica e verifica tutto ok. Se tutto ok Paolo deve poter premere un pulsante perl’invio del F24 al cliente ("OK invio") e il sistema lo invia. Nessun invio completamente automatico senza supervisione (i tributi/scadenze possono cambiare).
+Chi non deve pagare → nessuna email.
+Ti allegherò un f24 reale che puoi usare come template
+5.3 Registro letture (PDF precompilato)
+Genera un PDF precompilato con i dati tecnici generali dell'impianto e spazi vuoti per le letture mensili (il cliente lo stampa e compila a mano, per normativa).
+Il registro è in bianco: NON si relaziona con le letture E-distribuzione, pesca solo i dati generali dell'impianto.
+Invio via email ai clienti a inizio anno, per l'anno in corso/successivo.
+Solo per impianti con ha_registro_letture = true.
+Partire dal modello esistente (Paolo lo ha in Word e Excel).
+Ti allego alcuni template
+5.4 Raccolta letture
+Quattro modalità di input, tutte convergenti nella tabella letture:
+
+PDF "stampa pagina" E-distribuzione (modalità preferita): contiene POD, matricola contatore, periodo di riferimento e i valori mensili già puliti (F1/F2/F3). Vantaggi: dati autoidentificanti (riduce errori di associazione), archiviabile con riferimenti, abilita gli alert di validazione. Nota: E-distribuzione non ha un "produci PDF"; è una stampa pagina, quindi può occupare più pagine e spesso il portale limita l'estrazione a 3 mesi per volta (quindi tipicamente 2 PDF per un semestre).
+Screenshot: alcuni tecnici inviano direttamente screenshot delle letture. Estendere il motore per leggerli.
+CSV E-distribuzione: contiene i quarti orari → richiede aggregazione; il bot esistente lo gestisce già e calcola i totali mensili. Svantaggio: i CSV sono "anonimi" (solo numeri, senza matricola/POD) → più soggetti a errore. per ora lasciamo perdere questa opzione
+Inserimento manuale: sempre disponibile per correggere i casi in cui E-distribuzione non è affidabile o comunque per inserire manualmente tutto
+
+
+
+
+Nella tabella letture editabile
+
+La tabella (stile Excel) è modificabile e precompilata dal sistema, così Paolo interviene solo dove serve. Quando i check tornano, si passa alla dichiarazione.
+5.5 Alert sostituzione contatore
+Se la matricola nel documento caricato non corrisponde a quella in DB (mentre il POD corrisponde) → alert: probabile sostituzione contatore (il cliente nel 99% dei casi non avvisa).
+In caso di alert:
+Consentire l'upload del verbale di sostituzione (scaricabile da E-distribuzione) con data fine del vecchio e data inizio del nuovo → crea il record del nuovo contatore (con eventuale nuova K e nuova matricola; il tipo produzione/immissione resta invariato). Consentire comunque inserimento manuale nuovo contatore in qualsiasi caso
+Non inserire automaticamente la lettura del mese di sostituzione: E-distribuzione dà il totale del periodo attribuito erroneamente al contatore nuovo. Paolo divide manualmente i due periodi del mese (fine vecchio + inizio nuovo).
+Casistica rara (~3 casi su 80 impianti/anno) → gestione manuale per il mese interessato; gli altri mesi restano automatici. L'importante è che l'alert scatti.
+
+Esempio di calcolo con sostituzione (da riportare nei test): Vecchio contatore da 6000 → 6500 (differenza 500). Nuovo contatore parte da 0 → 500 (differenza 500). Produzione dell'anno = 500 + 500 = 1000. Due somme di differenze, basate sulle date delle letture.
+5.6 Validazione dati
+Alla generazione della tabella letture, mostrare un messaggio/alert se produzione, immissione e autoconsumo dell'anno corrente sono fuori linea rispetto allo storico (anni precedenti): segnalare scostamenti di ordine di grandezza (es. impianto da 30 kW che risulta produrre 1.000.000 kWh → errore evidente). Confronto anche con la potenza kW dell'impianto.
+Alert se autoconsumo negativo (impossibile).
+Riconciliazione: la somma dei valori mensili deve coincidere con i totali annui (differenza letture × K); se non coincide → segnalare.
+In scheda impianto ci deve essere un pulsante che richiama via API una AI che valida i dati e eventualmente solleva gli alert e li mostra a schermo 
+5.7 Generazione XML Dogane
+Pulsante che genera l'XML conforme alle specifiche del portale Agenzia delle Dogane (recuperare la specifica ufficiale del tracciato XML dal sito; esiste anche un'area di test dove validare gli XML caricati).
+Paolo firma e carica l'XML sul portale (il sistema non invia direttamente).
+Anagrafica (in gran parte costante, dal DB): tipo soggetto (con licenza / con autorizzazione), codice ditta (= codice licenza), ragione sociale, comune, indirizzo, anno, ufficio amministrativo (dalla licenza), data (auto).
+Per il momento predisponi la struttura della funzionalità, leggi i seguenti dettagli, ma per i dettagli specifici del XML daprodurre ti istruisco in seguito
+
+Quadro A — Produzione (annuale/semestrale):
+
+matricola, lettura attuale, lettura precedente, K.
+Calcolo: (attuale − precedente) × K × 1 = kWh.
+In caso di sostituzione contatore: più righe (una per periodo); il totale è la somma delle righe (2 righe se una sostituzione, 3+ righe se più sostituzioni).
+
+Quadro G — Immissione (annuale/semestrale): stesso schema del Quadro A (matricola, letture attuale/precedente, K) più 3 attributi:
+
+Tipo: una lettera fissa = "B" (impostabile/di default dal DB, modificabile).
+Codice identificativo = codice distributore di zona (attributo dell'impianto, inserito a mano da Paolo).
+Codice catastale del comune (attributo dell'impianto; può essere auto-popolato da tabella comuni).
+Possibili più righe con somma (come Quadro A).
+
+Quadro L — Autoconsumo (MENSILE):
+
+provincia dell'impianto (non del cliente), comune, codice catastale comune.
+Riga L6 per ciascun mese con l'autoconsumo del mese (kWh). Es. gennaio 2269 kWh.
+Utenze / usi commerciali: impostati manualmente, di norma 0.
+Righe da gennaio a dicembre.
+Assente per i soggetti con autorizzazione (nessun autoconsumo).
+
+Nota valori XML: nell'interfaccia dei quadri si inseriscono le letture (attuale/precedente); il calcolo dell'energia (× K) lo fa il sistema/portale. Nell'XML vanno indicati anche i valori e la K in modo da ottenere il totale corretto — allinearsi al tracciato ufficiale.
+5.8 Protocollo + email automatica al cliente
+Dopo l'upload dell'XML, l'Agenzia delle Dogane restituisce due file: un TXT di protocollo (contiene: protocollo ricevuto in data X, codice licenza, "dichiarazione acquisita") e un PDF di ricezione/esito positivo.
+Nella dashboard, Paolo deve poter carica i due file; deve poi esserci un pulsante “Invia ricevute dichiarazione”: il sistema chiede l’anno e il periodo di riferimento e compone automaticamente l'email al cliente allegando: PDF della dichiarazione, ricevuta/protocollo, e la tabellina delle letture mensili per il periodo di riferimento (che il cliente poi riporterà sul registro cartaceo).
+Paolo preme un bottone e l'email viene inviata al cliente.
+5.9 Tracking dichiarazioni e fatturazione
+Vista tabellare con tutti i clienti/impianti e, per ogni anno, lo stato della dichiarazione (2023 inviata sì/no, 2024, 2025, 2026…) e lo stato fatturazione (fatturato sì/no + importo).
+Obiettivo: non dimenticare nessuno dei ~86 impianti.
+
+
+6. FLUSSO END-TO-END (riassunto operativo)
+Anagrafica: consolidamento clienti/impianti/partner/contatori (import dagli Excel esistenti + onboarding da licenza PDF).
+Inizio anno: generazione e invio registro letture PDF (impianti con registro).
+Fine novembre: preparazione F24 diritto di licenza → conferma manuale → invio email.
+Raccolta letture (semestrale): Paolo fa login E-distribuzione con OTP → scarica letture in pdf e fa import nell’app . L’app, via API con AI legge il pdf, ricava i dati e li scrive opportunamente nel database → validazioni e alert (sostituzione contatore, ordini di grandezza, autoconsumo negativo) → tabella letture editabile.
+Dichiarazione: generazione XML (Quadri A/G/L) → Paolo firma e carica sul portale Dogane.
+Protocollo: upload TXT + PDF ricezione → email automatica al cliente (dichiarazione + protocollo + tabella letture).
+Tracking: aggiornamento stato dichiarazione + fatturazione.
+
+
+7. PRIORITÀ / FASI SUGGERITE
+Fase 1 (fondamenta): schema DB completo + CRUD anagrafiche + import Excel + relazione contatori produzione↔immissione + onboarding da licenza PDF.
+Fase 2 (letture): raccolta letture (partendo da PDF stampa pagina e riuso bot CSV), tabella editabile, motore calcoli K, validazioni/alert.
+Fase 3 (comunicazioni): F24 diritto di licenza, registro letture PDF, email protocollo + automazione OTP.
+Fase 4 (dichiarazione): generatore XML A/G/L + gestione righe multiple da sostituzione.
+Fase 5 (tracking): cruscotto dichiarazioni/fatturazione.
+
+
+8. MATERIALI CHE IL CLIENTE FORNIRÀ (input per lo sviluppo)
+Facsimile F24  → per mappare i campi esatti.
+Template del registro cartaceo (Word/Excel).
+PDF stampa pagina di E-distribuzione (esempio reale) → per il parser.
+Esempio di dichiarazione doganale (PDF) → per la struttura dei quadri.
+File Excel con i calcoli attuali di Paolo → per replicare la logica.
+Licenza (PDF) di esempio → per l'onboarding automatico.
+(Verbale di sostituzione contatore: gestito manualmente per ora, non prioritario.)
+
+
+9. VINCOLI E NOTE FINALI
+Le credenziali dei portali vanno cifrate e mai esposte in chiaro.
+Ogni automazione con impatto esterno (email, F24) richiede conferma umana con pulsante prima dell'esecuzione.
+Prevedere sempre override manuale su letture e dati calcolati (E-distribuzione non è sempre affidabile).
+Le letture E-distribuzione sono reali → dividere per K per la lettura registro; in dichiarazione moltiplicare per K.
+La relazione produzione↔immissione è molti-a-molti e non casuale: rispettarla nei calcoli di autoconsumo.
+Progettare per estendibilità (nuovi attributi impianto, tipologia eolico).
+
+Quando inizi: parti dallo schema del database e dai CRUD delle anagrafiche, poi chiedi conferma prima di procedere ai moduli letture/dichiarazione.

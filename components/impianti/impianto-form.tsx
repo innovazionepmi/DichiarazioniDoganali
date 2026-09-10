@@ -1,6 +1,6 @@
 "use client"
 
-import { useTransition } from "react"
+import { useEffect, useState, useTransition } from "react"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { toast } from "sonner"
@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Checkbox } from "@/components/ui/checkbox"
+import { SelettoreIndirizzo } from "@/components/shared/selettore-indirizzo"
 import {
   Select,
   SelectContent,
@@ -35,16 +36,36 @@ const TIPOLOGIA_LABEL: Record<string, string> = {
   eolico: "Eolico",
 }
 
+export type ClienteOptionConIndirizzo = {
+  id: string
+  ragione_sociale: string
+  indirizzo_via: string | null
+  indirizzo_cap: string | null
+  indirizzo_citta: string | null
+  indirizzo_provincia: string | null
+}
+
 export function ImpiantoForm({
   defaultValues,
   clienteOptions,
   onSubmit,
 }: {
   defaultValues?: Partial<ImpiantoInput>
-  clienteOptions: { id: string; ragione_sociale: string }[]
+  clienteOptions: ClienteOptionConIndirizzo[]
   onSubmit: (formData: FormData) => Promise<{ error?: string } | void>
 }) {
   const [pending, startTransition] = useTransition()
+  // "Indirizzo uguale al cliente" (feedback Paolo): la maggior parte degli
+  // impianti condivide l'indirizzo della ditta. Attivo di default solo se i
+  // campi indirizzo dell'impianto sono già vuoti (nuovo impianto o mai
+  // compilati) — un impianto con indirizzo già diverso da quello del
+  // cliente non deve vedersi resettare i propri dati all'apertura del form.
+  const [indirizzoUgualeCliente, setIndirizzoUgualeCliente] = useState(
+    () =>
+      !defaultValues?.indirizzo_via &&
+      !defaultValues?.indirizzo_citta &&
+      !defaultValues?.indirizzo_provincia
+  )
   const form = useForm<ImpiantoInput>({
     resolver: zodResolver(impiantoSchema),
     defaultValues: {
@@ -68,6 +89,25 @@ export function ImpiantoForm({
       ...defaultValues,
     },
   })
+
+  const clienteId = form.watch("cliente_id")
+
+  // Copia l'indirizzo del cliente sui campi indirizzo dell'impianto finché
+  // il toggle resta attivo — si riallinea da solo se l'operatore cambia
+  // cliente prima di salvare. Spento il toggle, i campi restano com'erano
+  // (editabili a mano) invece di svuotarsi.
+  useEffect(() => {
+    if (!indirizzoUgualeCliente) return
+    const cliente = clienteOptions.find((c) => c.id === clienteId)
+    if (!cliente) return
+    form.setValue("indirizzo_via", cliente.indirizzo_via ?? "", { shouldDirty: true })
+    form.setValue("indirizzo_cap", cliente.indirizzo_cap ?? "", { shouldDirty: true })
+    form.setValue("indirizzo_citta", cliente.indirizzo_citta ?? "", { shouldDirty: true })
+    form.setValue("indirizzo_provincia", cliente.indirizzo_provincia ?? "", {
+      shouldDirty: true,
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [indirizzoUgualeCliente, clienteId, clienteOptions])
 
   function handleSubmit(values: ImpiantoInput) {
     const formData = new FormData()
@@ -196,59 +236,40 @@ export function ImpiantoForm({
           />
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-4">
-          <FormField
-            control={form.control}
-            name="indirizzo_via"
-            render={({ field }) => (
-              <FormItem className="sm:col-span-2">
-                <FormLabel>Via impianto (con numero civico)</FormLabel>
-                <FormControl>
-                  <Input {...field} />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-          <FormField
-            control={form.control}
-            name="indirizzo_cap"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>CAP</FormLabel>
-                <FormControl>
-                  <Input {...field} />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-          <FormField
-            control={form.control}
-            name="indirizzo_provincia"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Provincia</FormLabel>
-                <FormControl>
-                  <Input placeholder="es. TV" maxLength={4} {...field} />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-          <FormField
-            control={form.control}
-            name="indirizzo_citta"
-            render={({ field }) => (
-              <FormItem className="sm:col-span-3">
-                <FormLabel>Città impianto</FormLabel>
-                <FormControl>
-                  <Input {...field} />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
+        <div className="grid gap-4">
+          <div className="flex flex-row items-center gap-2">
+            <Checkbox
+              checked={indirizzoUgualeCliente}
+              onCheckedChange={(checked) => setIndirizzoUgualeCliente(checked === true)}
+              id="indirizzo-uguale-cliente"
+            />
+            <label htmlFor="indirizzo-uguale-cliente" className="text-sm font-normal">
+              Indirizzo impianto uguale a quello del cliente
+            </label>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-4">
+            <FormField
+              control={form.control}
+              name="indirizzo_via"
+              render={({ field }) => (
+                <FormItem className="sm:col-span-2">
+                  <FormLabel>Via impianto (con numero civico)</FormLabel>
+                  <FormControl>
+                    <Input {...field} disabled={indirizzoUgualeCliente} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <SelettoreIndirizzo
+              form={form}
+              campoProvincia="indirizzo_provincia"
+              campoCitta="indirizzo_citta"
+              campoCap="indirizzo_cap"
+              campoCodiceCatastale="codice_catastale_comune"
+              disabled={indirizzoUgualeCliente}
+            />
+          </div>
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2">
