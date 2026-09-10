@@ -18,7 +18,10 @@ import {
   type EsitoInvioAdm,
   type EsitoControlloStato,
 } from "@/lib/adm/soap-client"
-import { generaRicevutaInvioPdf } from "@/lib/pdf/ricevuta-invio-generator"
+import {
+  generaRicevutaInvioPdf,
+  generaAnteprimaDichiarazionePdf,
+} from "@/lib/pdf/ricevuta-invio-generator"
 import { inviaEmail } from "@/lib/email/client"
 
 const MESI_LABEL = [
@@ -583,6 +586,62 @@ export async function scaricaRicevutaDichiarazione(
 
   revalidatePath(`/anagrafiche/impianti/${riga.impianto_id}`)
 
+  return { base64: Buffer.from(pdfBytes).toString("base64"), nomeFile }
+}
+
+export type ScaricaAnteprimaResult = { error: string } | { base64: string; nomeFile: string }
+
+// Anteprima PDF pre-invio (feedback Paolo: vuole poter controllare il
+// contenuto stampato prima di firmarlo e inviarlo a S2S). Rilegge l'XML già
+// generato e archiviato (stesso pattern di recuperaRiepilogoDichiarazione:
+// mostra esattamente ciò che è nel file, non un ricalcolo da DB che
+// potrebbe essere disallineato) e lo rende in PDF senza IUT/esito, che a
+// questo punto non esistono ancora. Generata al volo, non archiviata: può
+// essere richiesta più volte prima dell'invio vero.
+export async function scaricaAnteprimaDichiarazionePdf(
+  dichiarazioneId: string
+): Promise<ScaricaAnteprimaResult> {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) return { error: "Non autenticato" }
+
+  const { data: riga, error } = await supabase
+    .from("dichiarazioni_ee_semestrali")
+    .select("impianto_id, documento_xml_id, anno, periodo_riferimento")
+    .eq("id", dichiarazioneId)
+    .single()
+  if (error || !riga) return { error: error?.message ?? "Dichiarazione non trovata" }
+  if (!riga.documento_xml_id) return { error: "XML non ancora generato per questa dichiarazione." }
+
+  const xmlResult = await scaricaDocumento(riga.documento_xml_id)
+  if ("error" in xmlResult) return xmlResult
+
+  let dati: DichiarazioneEeSemestraleInput
+  try {
+    dati = parseDichiarazioneEeSemestraleXml(Buffer.from(xmlResult.base64, "base64").toString("utf-8"))
+  } catch {
+    return { error: "L'XML archiviato non è leggibile: rigenera la dichiarazione." }
+  }
+
+  const { data: impianto } = await supabase
+    .from("impianti")
+    .select("nome_impianto, cliente_id, indirizzo_via, indirizzo_citta")
+    .eq("id", riga.impianto_id)
+    .single()
+  const { data: cliente } = impianto
+    ? await supabase.from("clienti").select("ragione_sociale").eq("id", impianto.cliente_id).single()
+    : { data: null }
+
+  const pdfBytes = await generaAnteprimaDichiarazionePdf({
+    clienteRagioneSociale: cliente?.ragione_sociale ?? "",
+    impiantoComune: impianto?.indirizzo_citta ?? "",
+    impiantoIndirizzo: impianto?.indirizzo_via ?? "",
+    dati,
+  })
+
+  const nomeFile = `Anteprima_${riga.anno}_S${riga.periodo_riferimento}_${(impianto?.nome_impianto ?? "impianto").replace(/[^a-z0-9]+/gi, "-")}.pdf`
   return { base64: Buffer.from(pdfBytes).toString("base64"), nomeFile }
 }
 

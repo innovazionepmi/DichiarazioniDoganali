@@ -34,6 +34,7 @@ import {
   caricaEsitoDichiarazione,
   controllaStatoDichiarazioneReale,
   scaricaRicevutaDichiarazione,
+  scaricaAnteprimaDichiarazionePdf,
   inviaRicevutaClienteEmail,
 } from "@/lib/actions/dichiarazioni"
 import { scaricaDocumento } from "@/lib/actions/documenti"
@@ -152,6 +153,17 @@ export function DichiarazioneSection({
       toast.success("Dichiarazione generata e scaricata")
       setOpen(false)
       router.refresh()
+    })
+  }
+
+  function handleScaricaAnteprima(dichiarazioneId: string) {
+    startTransition(async () => {
+      const result = await scaricaAnteprimaDichiarazionePdf(dichiarazioneId)
+      if ("error" in result) {
+        toast.error(result.error)
+        return
+      }
+      scaricaBase64(result.base64, result.nomeFile, "application/pdf")
     })
   }
 
@@ -296,6 +308,16 @@ export function DichiarazioneSection({
                           onClick={() => handleScaricaXml(d.documento_xml_id!)}
                         >
                           Scarica XML
+                        </Button>
+                      )}
+                      {d.documento_xml_id && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={pending}
+                          onClick={() => handleScaricaAnteprima(d.id)}
+                        >
+                          Anteprima PDF
                         </Button>
                       )}
                       {d.documento_xml_id && !d.iut && (
