@@ -7,6 +7,7 @@ export const contatoreSchema = z.object({
   matricola: z.string().trim().min(1, "Campo obbligatorio").max(64),
   pod: z.string().trim().min(1, "Campo obbligatorio").max(32),
   tipo: z.enum(["produzione", "immissione"]),
+  modalita_letture: z.enum(["mensile", "cumulativa"]),
   costante_k: z
     .string()
     .trim()

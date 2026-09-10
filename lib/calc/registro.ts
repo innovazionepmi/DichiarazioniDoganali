@@ -56,6 +56,19 @@ export function autoconsumoNegativo(autoconsumo: number): boolean {
   return autoconsumo < 0
 }
 
+// Energia reale (kWh) di un mese quando l'operatore inserisce la lettura
+// progressiva del contatore (crescente) invece del kWh già calcolato —
+// feedback Paolo: alcuni clienti mandano le letture così, non i valori
+// mensili. Stessa formula già documentata sopra per il registro, solo
+// applicata in ingresso: energia = (lettura attuale − lettura precedente) × K.
+export function energiaDaLetturaCumulativa(
+  letturaAttuale: number,
+  letturaPrecedente: number,
+  costanteK: number
+): number {
+  return (letturaAttuale - letturaPrecedente) * costanteK
+}
+
 // Riconciliazione (brief §5.6): la somma dei valori mensili reali deve
 // coincidere con (lettura fine periodo − lettura inizio periodo) × K
 // calcolata sul registro. Stesso controllo "Verifica"/"VERIFICATO"
