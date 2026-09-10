@@ -11,25 +11,21 @@ export type Comune = {
 }
 
 // Elenco province per la tendina (brief: form indirizzo con provincia →
-// comune → CAP/codice catastale auto-popolati). Query leggera: 107 righe,
-// distinct su una tabella statica — nessuna cache dedicata, il client la
-// carica una sola volta al mount del selettore.
+// comune → CAP/codice catastale auto-popolati). Legge dalla vista `province`
+// (107 righe) invece di dedurre le distinte da `comuni` lato applicazione:
+// quella query leggeva tutte le 7904 righe di `comuni`, superando il limite
+// di default di Supabase/PostgREST di 1000 righe per risposta e troncando
+// silenziosamente l'elenco (bug osservato: mancavano le province dopo
+// "Bergamo" in ordine alfabetico).
 export async function cercaProvince(): Promise<Provincia[] | { error: string }> {
   const supabase = await createClient()
   const { data, error } = await supabase
-    .from("comuni")
+    .from("province")
     .select("provincia_sigla, provincia_nome")
     .order("provincia_nome")
   if (error) return { error: error.message }
 
-  const viste = new Set<string>()
-  const province: Provincia[] = []
-  for (const riga of data ?? []) {
-    if (viste.has(riga.provincia_sigla)) continue
-    viste.add(riga.provincia_sigla)
-    province.push({ sigla: riga.provincia_sigla, nome: riga.provincia_nome })
-  }
-  return province
+  return (data ?? []).map((riga) => ({ sigla: riga.provincia_sigla, nome: riga.provincia_nome }))
 }
 
 // Comuni di una provincia, per la seconda tendina — caricati solo dopo la
