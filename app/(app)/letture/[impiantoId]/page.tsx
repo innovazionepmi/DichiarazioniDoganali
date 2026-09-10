@@ -26,7 +26,7 @@ export default async function LettureImpiantoPage({
       .single(),
     supabase
       .from("contatori")
-      .select("id, matricola, pod, tipo, costante_k, lettura_iniziale")
+      .select("id, matricola, pod, tipo, modalita_letture, costante_k, lettura_iniziale")
       .eq("impianto_id", impiantoId)
       // Non filtriamo su attivo=true: un contatore sostituito a metà anno
       // (brief §5.5) viene cessato ma le letture già inserite sui mesi in cui

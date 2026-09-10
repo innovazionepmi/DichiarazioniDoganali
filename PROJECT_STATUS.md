@@ -1485,6 +1485,72 @@ test + CA root ADM già caricati e verificati. Quello che resta:
 14. Chiedi a Paolo/ADM chiarimenti sul "Quadro L" (avviso comparso in
    ambiente di addestramento) — vedi punto aperto nella sezione dedicata.
 
+## Selettore indirizzo provincia/comune + fix province troncate (2026-09-10)
+
+Feedback Paolo/Emilio sulle schede cliente/impianto: la maggior parte degli
+impianti ha indirizzo uguale al cliente, e provincia/comune andrebbero
+scelti da tendina invece che digitati a mano (con CAP e codice catastale
+auto-compilati). Costruito:
+
+- **Tabella `comuni`** (migration `20260910090001_comuni.sql`): 7904 comuni
+  italiani (ISTAT, dataset pubblico `matteocontrini/comuni-json`) con
+  provincia, CAP, codice catastale — verificato un valore noto (Treviso →
+  `L407`) contro dati già in produzione.
+- **`SelettoreIndirizzo`** (`components/shared/selettore-indirizzo.tsx`),
+  condiviso da `ClienteForm` e `ImpiantoForm`: due tendine provincia →
+  comune con CAP/codice catastale auto-popolati (sempre modificabili a
+  mano).
+- **Toggle "indirizzo impianto uguale a quello del cliente"** in
+  `ImpiantoForm`: copia via/CAP/provincia/città dal cliente selezionato,
+  attivo di default solo sui nuovi impianti.
+
+Due bug trovati e corretti durante il collaudo con Paolo, entrambi istruttivi:
+
+1. Il componente `Select` (Base UI) con liste lunghe (107 province) usa di
+   default un'animazione "cresce dalla voce selezionata" pensata per liste
+   corte, che con più voci si blocca — sostituito con **Combobox** (stessa
+   libreria, con ricerca testuale), vedi `components/ui/combobox.tsx`.
+2. Bug più subdolo: la tendina provincia si fermava sempre a "Bergamo" e
+   non trovava province successive tipo "Oristano" — non era la UI, era la
+   query: leggevo tutte le 7904 righe di `comuni` per dedurre le province
+   lato applicazione, superando il limite di default di Supabase/PostgREST
+   di **1000 righe per risposta**, che tronca silenziosamente (nessun
+   errore). Fix: vista dedicata `province` (migration
+   `20260910100001_province_view.sql`, 107 righe, ben sotto il limite) letta
+   direttamente da `cercaProvince()`. Da tenere a mente per qualunque futura
+   query che legga una tabella "grande" per derivare un sottoinsieme
+   distinto lato applicazione invece che lato DB.
+
+## Letture: modalità "cumulativa" per contatore (2026-09-10)
+
+Feedback Paolo: un cliente (Scuola Provera) manda le letture come valore
+progressivo del contatore (numero crescente ogni mese — lo stesso schema
+"Lettura attuale/precedente, differenza in automatico" del suo vecchio
+software), non come kWh mensile già calcolato. La tabella `/letture` si
+aspettava solo il secondo formato: inserendo i valori progressivi
+direttamente, l'autoconsumo usciva assurdo.
+
+- **`contatori.modalita_letture`** (enum `mensile`/`cumulativa`, migration
+  `20260910110001_contatori_modalita_letture.sql`, default `mensile` — nessun
+  contatore esistente cambia comportamento): impostabile dal form contatore
+  (`components/impianti/contatore-form.tsx`), è una caratteristica stabile
+  del contatore/cliente, non una scelta per singola lettura.
+- **`components/letture/letture-table.tsx`**: per i contatori in modalità
+  cumulativa, la cella del mese accetta la lettura progressiva invece di
+  F1/F2/F3; l'energia si ricava con la stessa formula già usata per il
+  registro (`energia = (lettura attuale − lettura precedente) × K`, nuova
+  funzione pura `energiaDaLetturaCumulativa` in `lib/calc/registro.ts`,
+  testata contro i valori reali del registro Provera — Gennaio 2026: 2052
+  kWh, Febbraio: 2591 kWh, autoconsumo 1808 kWh, tutti confermati). La
+  lettura precedente usata per il calcolo è l'ultimo valore digitato nei
+  mesi precedenti della stessa griglia, altrimenti la "lettura iniziale"
+  dell'anno (stesso meccanismo già esistente per il registro). Riaprendo la
+  pagina, i valori progressivi vengono ricostruiti dai delta salvati
+  (`letturaRegistro`, stessa formula già in uso, solo invertita) — nessun
+  dato nuovo salvato su `letture`, resta lo stesso formato (kWh reali in
+  `valore_f1`) di sempre: il cambiamento è solo nell'interfaccia di
+  inserimento.
+
 ## File utili per orientarsi
 
 - Schema: `supabase/migrations/` (leggere in ordine di timestamp)
@@ -1510,4 +1576,6 @@ test + CA root ADM già caricati e verificati. Quello che resta:
 - Quadro C (autoconsumo, compliance): `quadroCXml`/`mesiQuadroC` in `lib/xml/dichiarazione-ee-semestrale.ts`, `meseQuadroCSchema` in `lib/validation/dichiarazione-ee.schema.ts`, calcolo in `lib/actions/dichiarazioni.ts` (`generaDichiarazioneSemestrale`)
 - Log invii email: logging centralizzato in `lib/email/client.ts`, azione `lib/actions/email-log.ts`, UI `components/impostazioni/log-email-section.tsx`, migration `supabase/migrations/20260721100001_email_log.sql`
 - Correzioni meeting 27/07 (registro fedele al modello ADM, lettura iniziale, importo fattura): `lib/pdf/registro-letture-generator.ts` (+ logo in `lib/pdf/templates/logo-agenzia-dogane.jpg`), `components/letture/letture-table.tsx` (+ `aggiornaLetturaIniziale` in `lib/actions/letture.ts`), `ultimoGiornoMese` in `lib/calc/registro.ts`, `aggiornaImportoFattura` in `lib/actions/tracking.ts`, migration `supabase/migrations/20260727120001_tracking_fatture_importo.sql`
+- Selettore indirizzo provincia/comune: `components/shared/selettore-indirizzo.tsx`, `components/ui/combobox.tsx`, `lib/actions/comuni.ts`, migration `supabase/migrations/20260910090001_comuni.sql` (dati) e `20260910100001_province_view.sql` (vista)
+- Letture cumulative per contatore: `energiaDaLetturaCumulativa` in `lib/calc/registro.ts` (+ test), `components/letture/letture-table.tsx`, `modalita_letture` in `components/impianti/contatore-form.tsx`, migration `supabase/migrations/20260910110001_contatori_modalita_letture.sql`
 - Setup locale: [`README.md`](./README.md)

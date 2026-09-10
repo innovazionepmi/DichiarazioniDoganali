@@ -31,6 +31,7 @@ export type ContatoreRow = {
   matricola: string
   pod: string
   tipo: "produzione" | "immissione"
+  modalita_letture: "mensile" | "cumulativa"
   costante_k: number | null
   data_attivazione: string
   data_cessazione: string | null
@@ -67,6 +68,7 @@ export function ContatoriList({
                 <TableHead>POD</TableHead>
                 <TableHead>Matricola</TableHead>
                 <TableHead>Tipo</TableHead>
+                <TableHead>Letture</TableHead>
                 <TableHead>K</TableHead>
                 <TableHead>Attivazione</TableHead>
                 <TableHead>Cessazione</TableHead>
@@ -83,6 +85,13 @@ export function ContatoriList({
                     <Badge variant="outline">
                       {c.tipo === "produzione" ? "Produzione" : "Immissione"}
                     </Badge>
+                  </TableCell>
+                  <TableCell>
+                    {c.modalita_letture === "cumulativa" ? (
+                      <Badge variant="outline">Cumulativa</Badge>
+                    ) : (
+                      <span className="text-sm text-muted-foreground">Mensile</span>
+                    )}
                   </TableCell>
                   <TableCell>{c.costante_k ?? "—"}</TableCell>
                   <TableCell>{c.data_attivazione}</TableCell>
@@ -155,6 +164,7 @@ function toFormValues(c: ContatoreRow): Partial<ContatoreInput> {
     matricola: c.matricola,
     pod: c.pod,
     tipo: c.tipo,
+    modalita_letture: c.modalita_letture,
     costante_k: c.costante_k?.toString() ?? "",
     data_attivazione: c.data_attivazione,
     data_cessazione: c.data_cessazione ?? "",

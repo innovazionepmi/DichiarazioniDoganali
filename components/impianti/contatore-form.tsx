@@ -43,6 +43,7 @@ export function ContatoreForm({
       matricola: "",
       pod: "",
       tipo: "produzione",
+      modalita_letture: "mensile",
       costante_k: "",
       data_attivazione: "",
       data_cessazione: "",
@@ -114,6 +115,31 @@ export function ContatoreForm({
                   <SelectContent>
                     <SelectItem value="produzione">Produzione</SelectItem>
                     <SelectItem value="immissione">Immissione</SelectItem>
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="modalita_letture"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Come arrivano le letture</FormLabel>
+                <Select value={field.value} onValueChange={field.onChange}>
+                  <FormControl>
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    <SelectItem value="mensile">
+                      Valore mensile già calcolato (kWh)
+                    </SelectItem>
+                    <SelectItem value="cumulativa">
+                      Lettura progressiva del contatore (crescente)
+                    </SelectItem>
                   </SelectContent>
                 </Select>
                 <FormMessage />

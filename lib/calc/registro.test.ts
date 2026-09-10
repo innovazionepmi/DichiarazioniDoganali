@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import {
   autoconsumoMensile,
   autoconsumoNegativo,
+  energiaDaLetturaCumulativa,
   letturaRegistro,
   mesePrecedente,
   ordineGrandezzaPlausibile,
@@ -105,6 +106,25 @@ describe("riconciliazione", () => {
     })
     expect(risultato.verificato).toBe(true)
     expect(risultato.atteso).toBe(4500)
+  })
+})
+
+// Caso reale: cliente Scuola Provera (segnalato da Paolo come esempio del
+// problema "letture cumulative scambiate per valori mensili"). Gennaio 2026,
+// K=1: produzione 726.960 → 729.012, immissione 383.967 → 384.211.
+// Autoconsumo atteso 1.808 kWh, verificato contro il registro ufficiale del
+// cliente (non solo calcolato da noi).
+describe("energiaDaLetturaCumulativa", () => {
+  it("riproduce il caso reale Scuola Provera (K=1)", () => {
+    const produzione = energiaDaLetturaCumulativa(729012, 726960, 1)
+    const immissione = energiaDaLetturaCumulativa(384211, 383967, 1)
+    expect(produzione).toBe(2052)
+    expect(immissione).toBe(244)
+    expect(autoconsumoMensile(produzione, immissione)).toBe(1808)
+  })
+
+  it("applica la costante K quando diversa da 1", () => {
+    expect(energiaDaLetturaCumulativa(3490, 1165, 25)).toBe(58125)
   })
 })
 
