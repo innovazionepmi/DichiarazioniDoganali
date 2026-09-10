@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useTransition } from "react"
+import { useEffect, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -51,34 +51,31 @@ export function InvioDichiarazioneDialog({
 }) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
-  const [caricamento, setCaricamento] = useState(false)
   const [riepilogo, setRiepilogo] = useState<Riepilogo | null>(null)
   const [erroreCaricamento, setErroreCaricamento] = useState<string | null>(null)
   const [dichiarante, setDichiarante] = useState("")
   const [errore, setErrore] = useState<ErroreOperazione | null>(null)
 
-  function handleOpenChange(nextOpen: boolean) {
-    onOpenChange(nextOpen)
-    if (nextOpen && !riepilogo && !caricamento) {
-      setCaricamento(true)
+  // Bug corretto: il componente veniva montato (dal genitore, vedi
+  // DichiarazioneSection) già con `open=true` — Dialog non chiama mai
+  // `onOpenChange` per un `open` impostato dall'esterno, solo per
+  // interazioni interne (Esc, overlay, bottone chiudi). Il caricamento del
+  // riepilogo agganciato lì non partiva mai: dialog visibile ma vuoto,
+  // niente campo per caricare l'XML firmato. Ora si aggancia direttamente
+  // al mount/a `open`.
+  useEffect(() => {
+    if (!open) return
+    startTransition(async () => {
       setErroreCaricamento(null)
-      startTransition(async () => {
-        const result = await recuperaRiepilogoDichiarazione(dichiarazioneId)
-        setCaricamento(false)
-        if ("error" in result) {
-          setErroreCaricamento(result.error)
-          return
-        }
-        setRiepilogo(result)
-        setDichiarante(result.dichiaranteSuggerito)
-      })
-    }
-    if (!nextOpen) {
-      // Reset per il prossimo invio (potrebbe essere una dichiarazione diversa)
-      setRiepilogo(null)
-      setErroreCaricamento(null)
-    }
-  }
+      const result = await recuperaRiepilogoDichiarazione(dichiarazioneId)
+      if ("error" in result) {
+        setErroreCaricamento(result.error)
+        return
+      }
+      setRiepilogo(result)
+      setDichiarante(result.dichiaranteSuggerito)
+    })
+  }, [open, dichiarazioneId])
 
   function handleInvia(formData: FormData) {
     const file = formData.get("file")
@@ -111,7 +108,7 @@ export function InvioDichiarazioneDialog({
 
   return (
     <>
-      <Dialog open={open} onOpenChange={handleOpenChange}>
+      <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Conferma invio dichiarazione ad ADM</DialogTitle>
@@ -121,7 +118,9 @@ export function InvioDichiarazioneDialog({
             </DialogDescription>
           </DialogHeader>
 
-          {caricamento && <p className="text-sm text-muted-foreground">Caricamento dati…</p>}
+          {pending && !riepilogo && (
+            <p className="text-sm text-muted-foreground">Caricamento dati…</p>
+          )}
           {erroreCaricamento && <p className="text-sm text-destructive">{erroreCaricamento}</p>}
 
           {riepilogo && (
