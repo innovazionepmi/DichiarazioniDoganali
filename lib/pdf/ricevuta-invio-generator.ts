@@ -1,7 +1,6 @@
-import { readFileSync } from "node:fs"
-import path from "node:path"
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFImage, type PDFPage } from "pdf-lib"
 import type { DichiarazioneEeSemestraleInput } from "../validation/dichiarazione-ee.schema"
+import { LOGO_AGENZIA_DOGANE_BASE64 } from "./templates/logo-agenzia-dogane-base64"
 
 // Ricevuta PDF dell'invio S2S — S2S non restituisce un PDF pronto come
 // l'invio manuale U2S (solo XML OUTPUT/ESITO, vedi PROJECT_STATUS.md), lo
@@ -26,8 +25,6 @@ const PAGE_WIDTH = 595.28
 const PAGE_HEIGHT = 841.89
 const MARGIN = 45
 const LARGHEZZA_UTILE = PAGE_WIDTH - 2 * MARGIN
-
-const TEMPLATE_LOGO_PATH = path.join(process.cwd(), "lib/pdf/templates/logo-agenzia-dogane.jpg")
 
 // Blu ADM approssimato dal PDF di riferimento — intestazioni di sezione e
 // di tabella, sia sul frontespizio che sui Quadri.
@@ -334,7 +331,7 @@ export async function generaRicevutaInvioPdf(input: RicevutaInvioInput): Promise
   const pdfDoc = await PDFDocument.create()
   const helvetica = await pdfDoc.embedFont(StandardFonts.Helvetica)
   const helveticaBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold)
-  const logo = await pdfDoc.embedJpg(readFileSync(TEMPLATE_LOGO_PATH))
+  const logo = await pdfDoc.embedJpg(Buffer.from(LOGO_AGENZIA_DOGANE_BASE64, "base64"))
 
   // --- Pagina 1: frontespizio + esito ---
   const p1 = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT])
@@ -374,7 +371,7 @@ export async function generaAnteprimaDichiarazionePdf(
   const pdfDoc = await PDFDocument.create()
   const helvetica = await pdfDoc.embedFont(StandardFonts.Helvetica)
   const helveticaBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold)
-  const logo = await pdfDoc.embedJpg(readFileSync(TEMPLATE_LOGO_PATH))
+  const logo = await pdfDoc.embedJpg(Buffer.from(LOGO_AGENZIA_DOGANE_BASE64, "base64"))
 
   const p1 = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT])
   const y = disegnaTestataFrontespizio(p1, logo, helvetica, helveticaBold, {
@@ -384,10 +381,10 @@ export async function generaAnteprimaDichiarazionePdf(
     periodoRiferimento: input.dati.periodoRiferimento,
   })
 
-  disegnaSezioneInfo(p1, helvetica, helveticaBold, y, "Anteprima — documento non inviato", [
+  disegnaSezioneInfo(p1, helvetica, helveticaBold, y, "Anteprima - documento non inviato", [
     ["Stato", "Bozza, non inviata all'Agenzia delle Dogane e dei Monopoli"],
-    ["Comune impianto", input.impiantoComune || "—"],
-    ["Indirizzo impianto", input.impiantoIndirizzo || "—"],
+    ["Comune impianto", input.impiantoComune || "-"],
+    ["Indirizzo impianto", input.impiantoIndirizzo || "-"],
     ["Generato il", new Date().toLocaleDateString("it-IT")],
   ])
 
