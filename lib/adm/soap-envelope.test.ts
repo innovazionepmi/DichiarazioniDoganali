@@ -155,30 +155,39 @@ describe("categorizzaCodice", () => {
 })
 
 describe("costruisciBustaRecuperaEsito", () => {
-  it("include lo IUT nel namespace corretto (http://service.ws.sogei.it)", () => {
+  it("qualifica <recuperaEsito> col namespace del servizio ma non <iut> (verificato sul WSDL reale)", () => {
     const busta = costruisciBustaRecuperaEsito("20260101X00000000001")
-    expect(busta).toContain('<recuperaEsito xmlns="http://service.ws.sogei.it">')
+    expect(busta).toContain('<ns:recuperaEsito xmlns:ns="http://service.ws.sogei.it">')
+    // <iut> senza prefisso/xmlns proprio: con un xmlns= di default sulla
+    // radice (bug precedente) erediterebbe comunque il namespace del
+    // servizio, disallineandosi dallo schema (elemento locale, default
+    // "unqualified") — qui verifichiamo che non sia più così.
     expect(busta).toContain("<iut>20260101X00000000001</iut>")
+    expect(busta).not.toContain('xmlns="http://service.ws.sogei.it"')
   })
 })
 
-// Dati interamente inventati (nessun dato reale del cliente) — struttura
-// confermata su una risposta reale (2026-09-22): usa lo stesso elemento
-// <Output xmlns="http://ws.sogei.it/output/"> della risposta di invio, non
-// l'involucro <recuperaEsitoResponse><recuperaEsitoReturn> ipotizzato in
-// precedenza dal solo WSDL (mai verificato su un caso vero, si è rivelato
-// sbagliato — vedi il test con la risposta reale più sotto).
+// Dati interamente inventati (nessun dato reale del cliente). Forma "vera"
+// documentata sul WSDL reale (InteropService.wsdl): <recuperaEsitoResponse>
+// <recuperaEsitoReturn> (tipo Risposta, namespace http://output.ws.sogei.it).
+// La busta di richiesta aveva un bug di namespace (vedi
+// costruisciBustaRecuperaEsito) che faceva respingere la richiesta prima
+// ancora di arrivare al servizio vero, ricevendo invece la forma generica
+// <Output> — vedi i test più sotto con quella forma, ora trattata come
+// fallback/segnale di richiesta respinta, non più come "la" forma attesa.
 function bustaRecuperaEsitoFinta(esitoXml: string | null): string {
   const dataBase64 = esitoXml ? Buffer.from(esitoXml, "utf-8").toString("base64") : ""
   return `<?xml version="1.0"?>
 <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
   <soapenv:Body>
-    <Output xmlns="http://ws.sogei.it/output/">
-      <IUT>20260101X00000000001</IUT>
-      <esito><codice>200</codice><messaggio>Elaborazione OK: completata con esito finale</messaggio></esito>
-      ${dataBase64 ? `<data>${dataBase64}</data>` : ""}
-      <dataRegistrazione>2026-01-01</dataRegistrazione>
-    </Output>
+    <ns:recuperaEsitoResponse xmlns:ns="http://service.ws.sogei.it">
+      <recuperaEsitoReturn>
+        <IUT>20260101X00000000001</IUT>
+        <esito><codice>200</codice><messaggio>Elaborazione OK: completata con esito finale</messaggio></esito>
+        ${dataBase64 ? `<data>${dataBase64}</data>` : ""}
+        <dataRegistrazione>2026-01-01</dataRegistrazione>
+      </recuperaEsitoReturn>
+    </ns:recuperaEsitoResponse>
   </soapenv:Body>
 </soapenv:Envelope>`
 }
@@ -213,12 +222,13 @@ describe("interpretaRispostaRecuperaEsito", () => {
     expect(risultato.ok).toBe(false)
   })
 
-  // Risposta reale (2026-09-22) per un IUT respinto in accoglienza (codice
-  // 10, "Verifica xsd: fallita"): niente IUT né data nel corpo, solo
-  // <esito> — coincide con quanto già ricevuto con l'invio, perché ADM non
-  // produce il documento ESITO di dettaglio prima della fase di
-  // elaborazione sostanziale.
-  it("legge un rifiuto in fase di accoglienza (nessun IUT/data, solo esito)", () => {
+  // Risposta reale (2026-09-22), ottenuta però con la busta di richiesta
+  // ancora affetta dal bug di namespace su <iut>: verosimilmente il gateway
+  // di ADM ha respinto la richiesta prima di raggiungere il vero servizio
+  // recuperaEsito, restituendo la stessa forma generica <Output> usata
+  // anche per l'invio. Il parser deve comunque gestirla (fallback), invece
+  // di andare in errore "formato non riconosciuto".
+  it("gestisce il fallback <Output> quando la richiesta viene respinta dal gateway", () => {
     const xml = `<?xml version="1.0" encoding="utf-8"?><soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soapenc="http://schemas.xmlsoap.org/soap/encoding/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><soapenv:Body><Output xmlns="http://ws.sogei.it/output/"><esito><codice>10</codice><messaggio>Verifica xsd: fallita</messaggio></esito></Output></soapenv:Body></soapenv:Envelope>`
     const risultato = interpretaRispostaRecuperaEsito(xml)
     expect(risultato.ok).toBe(true)

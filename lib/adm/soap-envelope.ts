@@ -232,13 +232,22 @@ export type EsitoRecuperoEsito =
     }
   | { ok: false; categoria: CategoriaErroreAdm; messaggio: string; dettaglioTecnico?: string }
 
+// Namespace su prefisso (ns:), non di default (xmlns=): verificato sul WSDL
+// reale (InteropService.wsdl) che l'elemento radice <recuperaEsito> è
+// qualificato dal namespace del servizio, ma <iut> (elemento locale, lo
+// schema non dichiara elementFormDefault quindi il default XSD è
+// "unqualified") NON deve esserlo. Con un xmlns= di default sulla radice
+// <iut> erediterebbe comunque quel namespace per le normali regole XML,
+// disallineandosi dallo schema — probabile causa per cui "Dettaglio esito"
+// dava sempre "Verifica xsd: fallita" a prescindere dallo IUT richiesto
+// (la richiesta veniva respinta prima ancora di arrivare al vero servizio).
 export function costruisciBustaRecuperaEsito(iut: string): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
   <soapenv:Body>
-    <recuperaEsito xmlns="http://service.ws.sogei.it">
+    <ns:recuperaEsito xmlns:ns="http://service.ws.sogei.it">
       <iut>${escapeXml(iut)}</iut>
-    </recuperaEsito>
+    </ns:recuperaEsito>
   </soapenv:Body>
 </soapenv:Envelope>`
 }
@@ -301,7 +310,18 @@ export function interpretaRispostaRecuperaEsito(httpBody: string): EsitoRecupero
     }
   }
 
-  const risposta = body?.Output as Record<string, unknown> | undefined
+  // Due forme possibili, entrambe osservate/documentate:
+  // - `recuperaEsitoResponse.recuperaEsitoReturn` (tipo Risposta, namespace
+  //   http://output.ws.sogei.it): la forma "vera", documentata sul WSDL
+  //   reale (InteropService.wsdl), quando la richiesta arriva al servizio.
+  // - `Output` (namespace http://ws.sogei.it/output/): osservata quando la
+  //   nostra richiesta veniva respinta prima ancora di arrivare al servizio
+  //   vero — plausibilmente la forma generica del livello di gateway/
+  //   dispatch condiviso con l'invio, non specifica di recuperaEsito. Va
+  //   comunque gestita, come segnale che la richiesta non è stata accettata.
+  const rispostaVera = (body?.recuperaEsitoResponse as Record<string, unknown> | undefined)
+    ?.recuperaEsitoReturn as Record<string, unknown> | undefined
+  const risposta = rispostaVera ?? (body?.Output as Record<string, unknown> | undefined)
   if (!risposta) {
     return {
       ok: false,

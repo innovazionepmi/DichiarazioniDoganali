@@ -1556,15 +1556,22 @@ l'inserimento dei soli kWh"* — suggerisce che l'intenzione di supportare
 il caso "solo kWh" (Circolare 20/2026) non è ancora pienamente coerente
 con la tabella dimensioni dello stesso tracciato.
 
-**Fix applicato** (non ancora confermato contro ADM): `Matr` nel Quadro C
-ora usa un segnaposto esplicito non vuoto invece di una stringa vuota —
-`quadroCXml` in `lib/xml/dichiarazione-ee-semestrale.ts`
+**Fix applicato e confermato ✅**: `Matr` nel Quadro C ora usa un segnaposto
+esplicito non vuoto invece di una stringa vuota — `quadroCXml` in
+`lib/xml/dichiarazione-ee-semestrale.ts`
 (`MATR_QUADRO_C_PER_DIFFERENZA = "AUTOCONSUMO"`, 11 caratteri, rispetta il
-pattern `[A-Za-z0-9.,\-/]{1,15}`). Ri-validato con `lxml` contro lo stesso
-XSD reale: valido. **Prossimo passo**: Paolo deve rigenerare l'XML (il
-contenuto è cambiato, la firma precedente non è più valida), rifirmarlo
-con Aruba, e ricaricarlo — terzo tentativo reale, IUT precedenti
-`20260922M24151640805` e `...652848` per riferimento.
+pattern `[A-Za-z0-9.,\-/]{1,15}`). Terzo tentativo reale (2026-09-22,
+IUT `20260922M24151654779`): **accolto** ("Acquisito a sistema", codice
+20) — niente più "Verifica xsd: fallita". Era davvero la matricola vuota
+del Quadro C, non la firma né le autorizzazioni (entrambe indagate a fondo
+e scartate come cause, vedi sopra — comunque utile averle verificate).
+
+**Esito definitivo confermato (2026-09-22, stesso giorno)**: "Controlla
+stato" → **codice 200, "Elaborazione OK: completata con esito finale"** —
+il migliore esito possibile. 🎉 **Prima dichiarazione reale (Scuola
+Provera, 2026 S1) conclusa con successo, dalla generazione XML fino
+all'esito ADM definitivo.** IUT dei due tentativi falliti, per riferimento
+storico: `20260922M24151640805`, `20260922M24151652848`.
 
 ## Selettore indirizzo provincia/comune + fix province troncate (2026-09-10)
 
