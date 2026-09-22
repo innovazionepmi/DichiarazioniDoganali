@@ -1573,6 +1573,52 @@ Provera, 2026 S1) conclusa con successo, dalla generazione XML fino
 all'esito ADM definitivo.** IUT dei due tentativi falliti, per riferimento
 storico: `20260922M24151640805`, `20260922M24151652848`.
 
+**Bonus dello stesso giorno — bug nel "Dettaglio esito"**: leggendo il WSDL
+reale (`InteropService.wsdl`, nello stesso zip del tracciato) trovato un
+secondo bug indipendente: la busta di `recuperaEsito` qualificava per
+errore `<iut>` con il namespace del servizio (elemento locale, lo schema
+non specifica `elementFormDefault` quindi il default è "unqualified") —
+usando un `xmlns=` di default sulla radice invece di un prefisso, `<iut>`
+erediva comunque quel namespace per le normali regole XML. ADM rispondeva
+sempre con lo stesso "Verifica xsd: fallita" generico, a prescindere dallo
+IUT richiesto — sembrava "nessun dettaglio per rifiuti in accoglienza" ma
+era la nostra richiesta di consultazione a essere malformata. Corretto in
+`lib/adm/soap-envelope.ts` (`costruisciBustaRecuperaEsito`, ora con
+prefisso `ns:`); il parser ora gestisce anche la forma "vera"
+(`recuperaEsitoResponse`/`recuperaEsitoReturn`, mai osservata prima per il
+bug di cui sopra), oltre al fallback `<Output>` osservato quando il
+gateway respinge la richiesta.
+
+## Ricevuta/anteprima PDF: redesign in stile ADM (2026-09-22)
+
+Feedback Paolo: voleva che il PDF di "Scarica ricevuta" (e di conseguenza
+"Anteprima PDF", che condivide lo stesso generatore delle tabelle Quadri)
+somigliasse a un PDF di riferimento che usa come modello — logo ADM,
+tabelle con intestazione blu invece del semplice testo su sfondo bianco
+con bordo nero di prima. Riscritto `lib/pdf/ricevuta-invio-generator.ts`:
+
+- Frontespizio: logo ADM in alto a sinistra (stesso asset già usato dal
+  registro letture, `lib/pdf/templates/logo-agenzia-dogane.jpg`), titolo
+  a tutta larghezza, poi sezioni informative a tabella con barra blu
+  (Officine / Periodo di riferimento / Esito invio ADM o, per l'anteprima,
+  Anteprima — documento non inviato).
+- Tabelle Quadro A/C/G: intestazione con sfondo blu e testo bianco, righe
+  **TOTALE MESE {nome}** dopo i contatori di ogni mese (utile quando un
+  mese ha più contatori), riga **TOTALE QUADRO** finale in grassetto,
+  colonna kWh allineata a destra. Aggiunta anche la legenda tipologia
+  cessione sotto il Quadro G (assente prima).
+- Troncamento con "…" per celle che non entrano nella colonna (es. un
+  Id. officina destinataria insolitamente lungo), per non sovrapporre il
+  testo alla colonna successiva.
+
+Verificato visivamente via rasterizzazione (stessa tecnica già usata per
+altri PDF) su tutte e 4 le pagine, sia per la ricevuta che per l'anteprima.
+Non ho incluso la sezione "Rappresentante legale" (CF/Nome/Cognome) vista
+nel PDF di riferimento di Paolo: stesso tipo di dato che il modulo F24 ha
+deliberatamente smesso di compilare su richiesta esplicita di Paolo ("non
+si è mai sicuri di chi è effettivamente la persona tenuta a pagare") — da
+aggiungere solo se richiesto esplicitamente, con lo stesso avvertimento.
+
 ## Selettore indirizzo provincia/comune + fix province troncate (2026-09-10)
 
 Feedback Paolo/Emilio sulle schede cliente/impianto: la maggior parte degli
