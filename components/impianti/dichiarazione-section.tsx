@@ -39,6 +39,7 @@ import {
 } from "@/lib/actions/dichiarazioni"
 import { scaricaDocumento } from "@/lib/actions/documenti"
 import { InvioDichiarazioneDialog } from "@/components/impianti/invio-dichiarazione-dialog"
+import { DettaglioEsitoDialog } from "@/components/impianti/dettaglio-esito-dialog"
 import {
   ErrorePersistenteDialog,
   type ErroreOperazione,
@@ -94,6 +95,7 @@ export function DichiarazioneSection({
   const pdfInputRef = useRef<Record<string, HTMLInputElement | null>>({})
   const protocolloInputRef = useRef<Record<string, HTMLInputElement | null>>({})
   const [invioDichiarazioneId, setInvioDichiarazioneId] = useState<string | null>(null)
+  const [dettaglioEsitoId, setDettaglioEsitoId] = useState<string | null>(null)
   const [errore, setErrore] = useState<ErroreOperazione | null>(null)
 
   function handleControllaStato(dichiarazioneId: string) {
@@ -320,13 +322,13 @@ export function DichiarazioneSection({
                           Anteprima PDF
                         </Button>
                       )}
-                      {d.documento_xml_id && !d.iut && (
+                      {d.documento_xml_id && d.stato !== "inviata" && (
                         <Button
                           size="sm"
                           disabled={pending}
                           onClick={() => setInvioDichiarazioneId(d.id)}
                         >
-                          Invia dichiarazione
+                          {d.iut ? "Riprova invio" : "Invia dichiarazione"}
                         </Button>
                       )}
                       {d.iut && (
@@ -337,6 +339,16 @@ export function DichiarazioneSection({
                           onClick={() => handleControllaStato(d.id)}
                         >
                           Controlla stato
+                        </Button>
+                      )}
+                      {d.iut && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={pending}
+                          onClick={() => setDettaglioEsitoId(d.id)}
+                        >
+                          Dettaglio esito
                         </Button>
                       )}
                       {d.iut && (
@@ -382,6 +394,16 @@ export function DichiarazioneSection({
           open={invioDichiarazioneId !== null}
           onOpenChange={(next) => {
             if (!next) setInvioDichiarazioneId(null)
+          }}
+        />
+      )}
+
+      {dettaglioEsitoId && (
+        <DettaglioEsitoDialog
+          dichiarazioneId={dettaglioEsitoId}
+          open={dettaglioEsitoId !== null}
+          onOpenChange={(next) => {
+            if (!next) setDettaglioEsitoId(null)
           }}
         />
       )}

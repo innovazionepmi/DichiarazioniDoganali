@@ -15,8 +15,10 @@ import { caricaDocumento, scaricaDocumento } from "@/lib/actions/documenti"
 import {
   inviaDichiarazioneSoap,
   controllaStatoSoap,
+  recuperaEsitoSoap,
   type EsitoInvioAdm,
   type EsitoControlloStato,
+  type EsitoRecuperoEsito,
 } from "@/lib/adm/soap-client"
 import {
   generaRicevutaInvioPdf,
@@ -477,6 +479,32 @@ export async function controllaStatoDichiarazioneReale(
   }
 
   return risultato
+}
+
+// Dettaglio completo dell'esito (Segnalazioni: sezione/gravità/descrizione/
+// dato atteso/dato inviato) per un IUT già assegnato — utile quando il
+// codice esito da solo non basta a capire cosa non va (es. codice 10
+// "Verifica xsd fallita": il codice non dice QUALE elemento). Recupera
+// dal vivo da ADM (InteropService.recuperaEsito), non salva nulla: è
+// diagnostica on-demand, non fa parte del flusso normale di invio.
+export async function recuperaDettaglioEsitoReale(
+  dichiarazioneId: string
+): Promise<EsitoRecuperoEsito | { error: string }> {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) return { error: "Non autenticato" }
+
+  const { data: riga, error } = await supabase
+    .from("dichiarazioni_ee_semestrali")
+    .select("iut")
+    .eq("id", dichiarazioneId)
+    .single()
+  if (error || !riga) return { error: error?.message ?? "Dichiarazione non trovata" }
+  if (!riga.iut) return { error: "Nessun IUT disponibile: invia prima la dichiarazione." }
+
+  return recuperaEsitoSoap({ ambiente: "produzione", iut: riga.iut })
 }
 
 export type ScaricaRicevutaResult = { error: string } | { base64: string; nomeFile: string }

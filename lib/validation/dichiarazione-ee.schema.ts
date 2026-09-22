@@ -68,6 +68,10 @@ const meseQuadroGSchema = z.object({
 // azionati da fonti rinnovabili... consumata dalle imprese di
 // autoproduzione"). Un solo codice uso coperto — l'unico caso applicabile al
 // profilo "officina di produzione da fonti rinnovabili uso proprio esente".
+// (L'XML scritto da quadroCXml valorizza comunque Matr con un segnaposto
+// fisso — il tracciato campi ADM lo richiede non vuoto nonostante la
+// circolare, vedi commento lì — ma resta fuori da questo schema di input,
+// che modella solo i dati che l'operatore fornisce davvero.)
 const meseQuadroCSchema = z.object({
   numMese: z.number().int().min(1).max(12),
   kwh: kwhSchema,

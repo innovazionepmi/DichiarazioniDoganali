@@ -80,9 +80,17 @@ function contatoreCedutaXml(c: ContatoreCedutaRiga): string {
 
 // Tipologia fissa "L2" (Allegato 1 Circolare 6/2026): unico codice uso
 // coperto per il profilo "officina di produzione da fonti rinnovabili uso
-// proprio esente". Matr vuoto e nessuna lettura/costante: misurato "per
-// differenza" (Circolare 20/2026 punto 1), non da un contatore dedicato.
+// proprio esente". Nessuna lettura/costante: misurato "per differenza"
+// (Circolare 20/2026 punto 1), non da un contatore dedicato.
 const TIPOLOGIA_QUADRO_C = "L2"
+
+// Matr non può essere vuoto nonostante la circolare dica "non è necessario
+// compilarla": il tracciato campi ADM (colonna "Dimensione min…max")
+// documenta 1..15 caratteri per questo elemento in ogni quadro, non 0..15
+// come lascerebbe intendere il solo pattern XSD — un primo invio reale con
+// Matr vuoto è stato respinto da ADM con "Verifica xsd: fallita" (codice
+// 10). Segnaposto esplicito, non un numero di matricola inventato.
+const MATR_QUADRO_C_PER_DIFFERENZA = "AUTOCONSUMO"
 
 function quadroCXml(mesi: DichiarazioneEeSemestraleInput["quadroC"]): string {
   const meseNodi = mesi
@@ -91,7 +99,7 @@ function quadroCXml(mesi: DichiarazioneEeSemestraleInput["quadroC"]): string {
       return (
         `<Mese NumMese="${mese.numMese}">` +
         `<Contatore>` +
-        el("Matr", "") +
+        el("Matr", MATR_QUADRO_C_PER_DIFFERENZA) +
         el("kWh", kwh) +
         el("Tipologia", TIPOLOGIA_QUADRO_C) +
         `</Contatore>` +
