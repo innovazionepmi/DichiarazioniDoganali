@@ -1534,13 +1534,37 @@ XML non firmato via "Scarica XML", XML firmato incollato da Emilio):
    all'elaborazione sostanziale. Non c'è altro da recuperare via API per
    questo caso.
 
-**Stato**: irrisolto. Sia il contenuto della dichiarazione sia il formato
-di firma risultano corretti secondo le regole che ADM stessa documenta —
-il prossimo passo utile è MONET (Paolo ha avuto difficoltà ad accedervi,
-serve SPID/CNS) per il file OUTPUT del sistema di accoglienza, o
-l'assistenza ADM direttamente, perché la contraddizione (schema che
-richiede la firma ma rifiuta qualunque firma se applicato alla lettera) va
-oltre quello che si può risolvere leggendo XSD e manuali da soli.
+**Aggiornamento stesso giorno — autorizzazioni escluse, trovato un indizio
+concreto nel tracciato campi**: verificato su PUDM (Le mie autorizzazioni,
+filtro per CF delegante) che sia `dlr_enelettr` che
+`dlr_enelettr_sottoscrittore` per Scuola Provera (80010130260) risultano
+**già approvate dal 2021/2022** — non è un problema di autorizzazione
+mancante per questo cliente, ipotesi scartata.
+
+Trovato invece un file più dettagliato dell'XSD grezzo:
+`Tracciato_EnergiaElettricaSemestrale_2026 v3.xlsx` (cartella
+`dichiaraz-semestr-2026-reale-zipped`, stessi 4 XSD già usati — confermato
+con `diff`, nessuna differenza). Questo tracciato documenta, per ogni
+campo, una colonna "Dimensione min…max" — e per **Matr** (matricola
+contatore), in ogni quadro dove compare, riporta **`1..15`** caratteri,
+cioè **minimo 1**. Il pattern XSD grezzo (`{0,15}`) permette invece anche
+zero caratteri — esattamente quello che generavamo noi per il Quadro C
+(`<Matr></Matr>` vuoto, seguendo alla lettera "non è necessario compilare
+la matricola" di Circolare 20/2026). La riga 41 del tracciato ha anche una
+nota illuminante: *"riportare dalle annuali la possibilità di consentire
+l'inserimento dei soli kWh"* — suggerisce che l'intenzione di supportare
+il caso "solo kWh" (Circolare 20/2026) non è ancora pienamente coerente
+con la tabella dimensioni dello stesso tracciato.
+
+**Fix applicato** (non ancora confermato contro ADM): `Matr` nel Quadro C
+ora usa un segnaposto esplicito non vuoto invece di una stringa vuota —
+`quadroCXml` in `lib/xml/dichiarazione-ee-semestrale.ts`
+(`MATR_QUADRO_C_PER_DIFFERENZA = "AUTOCONSUMO"`, 11 caratteri, rispetta il
+pattern `[A-Za-z0-9.,\-/]{1,15}`). Ri-validato con `lxml` contro lo stesso
+XSD reale: valido. **Prossimo passo**: Paolo deve rigenerare l'XML (il
+contenuto è cambiato, la firma precedente non è più valida), rifirmarlo
+con Aruba, e ricaricarlo — terzo tentativo reale, IUT precedenti
+`20260922M24151640805` e `...652848` per riferimento.
 
 ## Selettore indirizzo provincia/comune + fix province troncate (2026-09-10)
 

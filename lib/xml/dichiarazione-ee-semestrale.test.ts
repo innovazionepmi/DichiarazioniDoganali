@@ -101,11 +101,14 @@ describe("generaDichiarazioneEeSemestraleXml", () => {
     )
   })
 
-  it("scrive il Quadro C tra A e G con Matr vuoto e Tipologia L2", () => {
+  it("scrive il Quadro C tra A e G con Matr segnaposto e Tipologia L2", () => {
     const xml = generaDichiarazioneEeSemestraleXml(INPUT_SINTETICO)
     expect(xml.indexOf("<A>")).toBeLessThan(xml.indexOf("<C>"))
     expect(xml.indexOf("<C>")).toBeLessThan(xml.indexOf("<G>"))
-    expect(xml).toContain("<Matr></Matr>")
+    // Matr non può essere vuoto: il tracciato campi ADM richiede 1..15
+    // caratteri anche qui, nonostante la circolare dica "non necessaria" —
+    // un primo invio reale con Matr vuoto è stato respinto (XSD, codice 10).
+    expect(xml).toContain("<Matr>AUTOCONSUMO</Matr>")
     expect(xml).toContain("<Tipologia>L2</Tipologia>")
     // Mese 1: autoconsumo = 100 (produzione) − 40 (cessione) = 60
     expect(xml.split("<C>")[1].split("</C>")[0]).toContain("<kWh>60</kWh>")
