@@ -322,13 +322,13 @@ export function DichiarazioneSection({
                           Anteprima PDF
                         </Button>
                       )}
-                      {d.documento_xml_id && !d.iut && (
+                      {d.documento_xml_id && d.stato !== "inviata" && (
                         <Button
                           size="sm"
                           disabled={pending}
                           onClick={() => setInvioDichiarazioneId(d.id)}
                         >
-                          Invia dichiarazione
+                          {d.iut ? "Riprova invio" : "Invia dichiarazione"}
                         </Button>
                       )}
                       {d.iut && (

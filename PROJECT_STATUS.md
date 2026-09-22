@@ -1485,6 +1485,63 @@ test + CA root ADM già caricati e verificati. Quello che resta:
 14. Chiedi a Paolo/ADM chiarimenti sul "Quadro L" (avviso comparso in
    ambiente di addestramento) — vedi punto aperto nella sezione dedicata.
 
+## Prima dichiarazione reale: "Verifica xsd fallita" (codice 10) — indagine (2026-09-22)
+
+Paolo ha tentato il primo invio reale S2S (Scuola Provera, 2026 S1) ed è
+stato respinto in fase di accoglienza con **codice 10 "Verifica xsd:
+fallita"**. Indagine approfondita (file scaricati direttamente dall'app:
+XML non firmato via "Scarica XML", XML firmato incollato da Emilio):
+
+1. **L'XML non firmato è stato validato contro lo schema XSD reale**
+   (`EnergiaElettricaSemestrale.xsd` + `EE_ComplexTypes_Semestrale.xsd`,
+   cartella "ambiente-reale") con `lxml` Python: **valido al 100%**. Il
+   generatore non ha colpe.
+2. **L'XML firmato**, stessa validazione: **fallisce**, un solo errore —
+   `ds:Signature` (namespace xmldsig) non atteso come figlio della radice.
+   Firma XAdES-BES enveloped di Aruba Sign, `ds:Signature` come ultimo
+   elemento — esattamente lo schema di firma richiesto.
+3. **Verificato contro il manuale operativo ufficiale** (ambiente reale,
+   §2.3 "Modalità di firma dei messaggi XML"): conferma **testualmente**
+   che serve XAdES-BES enveloped con `ds:Signature` come ultimo elemento
+   della radice — **esattamente quello che Aruba Sign ha prodotto**. Non è
+   un errore di firma di Paolo: lo schema XSD "nudo" (senza tener conto
+   della firma obbligatoria) rifiuterebbe qualunque dichiarazione firmata
+   correttamente, quindi ADM deve necessariamente togliere la firma prima
+   di validare — il vero motivo del codice 10 resta da capire.
+4. **Costruito un canale diagnostico nuovo**: `InteropService.recuperaEsito`
+   era implementato in `lib/adm/soap-client.ts` ma **mai collegato
+   all'interfaccia per l'invio reale** (solo alla sandbox di test) — ora
+   c'è un bottone **"Dettaglio esito"** in
+   `components/impianti/dichiarazione-section.tsx`
+   (`components/impianti/dettaglio-esito-dialog.tsx`,
+   `recuperaDettaglioEsitoReale` in `lib/actions/dichiarazioni.ts`) che lo
+   interroga dal vivo — utile soprattutto per un rifiuto in fase di
+   **elaborazione sostanziale** (codici 197/198), dove ADM produce un vero
+   documento ESITO con `Segnalazione` per campo (sezione/gravità/
+   descrizione/atteso/inviato).
+5. **Bug trovato e corretto nel parser di `recuperaEsito`** grazie al
+   bottone appena costruito: la struttura ipotizzata dal solo WSDL
+   (`<recuperaEsitoResponse><recuperaEsitoReturn>`) **non corrispondeva
+   alla risposta reale**, che usa lo stesso elemento `<Output
+   xmlns="http://ws.sogei.it/output/">` della risposta di invio — sistemato
+   in `lib/adm/soap-envelope.ts` (`interpretaRispostaRecuperaEsito`),
+   nuovo test con la risposta reale anonimizzata in `soap-envelope.test.ts`.
+6. **Conclusione per il codice 10 specifico**: interrogato `recuperaEsito`
+   per questo IUT con il canale appena corretto — risposta identica a
+   quella già ricevuta con l'invio (solo `<esito>`, senza IUT né `data`):
+   **ADM non produce un documento di dettaglio per un rifiuto in fase di
+   accoglienza**, quello esiste solo per le dichiarazioni che arrivano
+   all'elaborazione sostanziale. Non c'è altro da recuperare via API per
+   questo caso.
+
+**Stato**: irrisolto. Sia il contenuto della dichiarazione sia il formato
+di firma risultano corretti secondo le regole che ADM stessa documenta —
+il prossimo passo utile è MONET (Paolo ha avuto difficoltà ad accedervi,
+serve SPID/CNS) per il file OUTPUT del sistema di accoglienza, o
+l'assistenza ADM direttamente, perché la contraddizione (schema che
+richiede la firma ma rifiuta qualunque firma se applicato alla lettera) va
+oltre quello che si può risolvere leggendo XSD e manuali da soli.
+
 ## Selettore indirizzo provincia/comune + fix province troncate (2026-09-10)
 
 Feedback Paolo/Emilio sulle schede cliente/impianto: la maggior parte degli
@@ -1567,6 +1624,7 @@ direttamente, l'autoconsumo usciva assurdo.
 - Tracking dichiarazioni/fatture: `app/(app)/tracking/`, `components/tracking/tracking-table.tsx`, `lib/actions/tracking.ts`, migration `supabase/migrations/20260714120001_tracking.sql`
 - Certificato autenticazione ADM (invio S2S): `app/(app)/impostazioni/`, `components/impostazioni/certificato-adm-section.tsx`, `lib/actions/certificati-adm.ts`, migration `supabase/migrations/20260714140001_certificati_adm.sql`
 - Client SOAP invio ADM + sandbox di test: `lib/adm/soap-client.ts` (orchestrazione, `server-only`), `lib/adm/soap-envelope.ts` (+ `.test.ts`, logica pura), `lib/xml/dichiarazione-test-fittizia.ts` (+ `.test.ts`), `lib/actions/adm-test.ts`, UI: `components/impostazioni/test-invio-adm-section.tsx`, errore persistente riusabile: `components/shared/errore-persistente-dialog.tsx`, CA root ADM: `lib/adm/certificati/`
+- Dettaglio esito ADM per un IUT reale (diagnostica invii falliti): `recuperaDettaglioEsitoReale` in `lib/actions/dichiarazioni.ts` (usa `recuperaEsitoSoap` già esistente in `soap-client.ts`), UI: `components/impianti/dettaglio-esito-dialog.tsx`
 - Invio S2S reale (collegato alla dichiarazione vera): `parseDichiarazioneEeSemestraleXml` in `lib/xml/dichiarazione-ee-semestrale.ts`, azioni `recuperaRiepilogoDichiarazione`/`inviaDichiarazioneReale`/`controllaStatoDichiarazioneReale`/`scaricaRicevutaDichiarazione` in `lib/actions/dichiarazioni.ts`, UI: `components/impianti/invio-dichiarazione-dialog.tsx` (schermata di riepilogo pre-invio), migration `supabase/migrations/20260720120001_dichiarazione_invio_reale.sql`
 - Registro letture PDF: `lib/pdf/registro-letture-generator.ts`, `lib/actions/registro-letture.ts`, UI: `components/impianti/registro-letture-section.tsx`
 - Ricevuta invio S2S in PDF: `lib/pdf/ricevuta-invio-generator.ts` (usato da `scaricaRicevutaDichiarazione` in `lib/actions/dichiarazioni.ts`)

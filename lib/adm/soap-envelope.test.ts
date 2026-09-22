@@ -163,20 +163,22 @@ describe("costruisciBustaRecuperaEsito", () => {
 })
 
 // Dati interamente inventati (nessun dato reale del cliente) — struttura
-// verificata su un esito reale scaricato da MONET, non i valori.
+// confermata su una risposta reale (2026-09-22): usa lo stesso elemento
+// <Output xmlns="http://ws.sogei.it/output/"> della risposta di invio, non
+// l'involucro <recuperaEsitoResponse><recuperaEsitoReturn> ipotizzato in
+// precedenza dal solo WSDL (mai verificato su un caso vero, si è rivelato
+// sbagliato — vedi il test con la risposta reale più sotto).
 function bustaRecuperaEsitoFinta(esitoXml: string | null): string {
   const dataBase64 = esitoXml ? Buffer.from(esitoXml, "utf-8").toString("base64") : ""
   return `<?xml version="1.0"?>
 <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
   <soapenv:Body>
-    <ns:recuperaEsitoResponse xmlns:ns="http://service.ws.sogei.it">
-      <recuperaEsitoReturn>
-        <IUT>20260101X00000000001</IUT>
-        <esito><codice>200</codice><messaggio>Elaborazione OK: completata con esito finale</messaggio></esito>
-        ${dataBase64 ? `<data>${dataBase64}</data>` : ""}
-        <dataRegistrazione>2026-01-01</dataRegistrazione>
-      </recuperaEsitoReturn>
-    </ns:recuperaEsitoResponse>
+    <Output xmlns="http://ws.sogei.it/output/">
+      <IUT>20260101X00000000001</IUT>
+      <esito><codice>200</codice><messaggio>Elaborazione OK: completata con esito finale</messaggio></esito>
+      ${dataBase64 ? `<data>${dataBase64}</data>` : ""}
+      <dataRegistrazione>2026-01-01</dataRegistrazione>
+    </Output>
   </soapenv:Body>
 </soapenv:Envelope>`
 }
@@ -206,9 +208,26 @@ describe("interpretaRispostaRecuperaEsito", () => {
     }
   })
 
-  it("segnala un formato inatteso (nessun recuperaEsitoReturn)", () => {
+  it("segnala un formato inatteso (nessun Output)", () => {
     const risultato = interpretaRispostaRecuperaEsito("<Envelope><Body><Altro/></Body></Envelope>")
     expect(risultato.ok).toBe(false)
+  })
+
+  // Risposta reale (2026-09-22) per un IUT respinto in accoglienza (codice
+  // 10, "Verifica xsd: fallita"): niente IUT né data nel corpo, solo
+  // <esito> — coincide con quanto già ricevuto con l'invio, perché ADM non
+  // produce il documento ESITO di dettaglio prima della fase di
+  // elaborazione sostanziale.
+  it("legge un rifiuto in fase di accoglienza (nessun IUT/data, solo esito)", () => {
+    const xml = `<?xml version="1.0" encoding="utf-8"?><soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soapenc="http://schemas.xmlsoap.org/soap/encoding/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><soapenv:Body><Output xmlns="http://ws.sogei.it/output/"><esito><codice>10</codice><messaggio>Verifica xsd: fallita</messaggio></esito></Output></soapenv:Body></soapenv:Envelope>`
+    const risultato = interpretaRispostaRecuperaEsito(xml)
+    expect(risultato.ok).toBe(true)
+    if (risultato.ok) {
+      expect(risultato.iut).toBe("")
+      expect(risultato.codice).toBe("10")
+      expect(risultato.messaggi).toEqual(["Verifica xsd: fallita"])
+      expect(risultato.segnalazioni).toEqual([])
+    }
   })
 })
 

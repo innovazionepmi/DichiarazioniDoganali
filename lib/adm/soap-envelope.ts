@@ -190,17 +190,26 @@ export function interpretaRispostaInvio(httpBody: string): EsitoInvioAdm {
 }
 
 // --- InteropService.recuperaEsito -------------------------------------
-// Struttura verificata sul WSDL reale (InteropService.wsdl, fornito
-// dall'utente): richiesta { iut }, risposta Risposta { IUT, esito?, data?
-// (base64Binary), dataRegistrazione }. `data` contiene il documento ESITO
-// vero e proprio, sigillato da ADM con firma XAdES-BES enveloped — non
-// verifichiamo quella firma (serve solo ai controlli legali di ADM, non a
-// mostrare il contenuto all'operatore), leggiamo solo gli elementi
-// <Segnalazione> al suo interno. Struttura del documento ESITO (namespace
-// rendicontazioni.depositifiscali.monopoli.finanze.it) verificata su un
-// esempio reale scaricato da MONET (ambiente di addestramento, non da un
-// XSD ufficiale): il "numero di registrazione" (es. "2026/A/1733") sta nel
-// campo DatoInviato della segnalazione con Sezione="PROTOCOLLAZIONE".
+// Struttura confermata su una risposta reale (2026-09-22, IUT respinto in
+// accoglienza con codice 10): la busta usa lo stesso elemento <Output
+// xmlns="http://ws.sogei.it/output/"> della risposta di invio (§3.2 del
+// manuale — "Risposta" è evidentemente un tipo condiviso), NON l'involucro
+// RPC-style <recuperaEsitoResponse><recuperaEsitoReturn> ipotizzato in
+// precedenza dal solo WSDL (mai verificato su un caso vero fino ad ora —
+// era sbagliato). Per un rifiuto in fase di accoglienza (IUT/data assenti,
+// solo <esito>) il risultato è semplicemente equivalente a quello già
+// ricevuto con l'invio — nessun dettaglio aggiuntivo da recuperare, ADM non
+// lo produce prima della fase di elaborazione sostanziale.
+// `data` (quando presente, per un esito arrivato all'elaborazione
+// sostanziale) contiene il documento ESITO vero e proprio, sigillato da ADM
+// con firma XAdES-BES enveloped — non verifichiamo quella firma (serve solo
+// ai controlli legali di ADM, non a mostrare il contenuto all'operatore),
+// leggiamo solo gli elementi <Segnalazione> al suo interno. Struttura del
+// documento ESITO (namespace rendicontazioni.depositifiscali.monopoli.finanze.it)
+// verificata su un esempio reale scaricato da MONET (ambiente di
+// addestramento, non da un XSD ufficiale): il "numero di registrazione"
+// (es. "2026/A/1733") sta nel campo DatoInviato della segnalazione con
+// Sezione="PROTOCOLLAZIONE".
 
 export type SegnalazioneEsito = {
   sezione: string
@@ -292,8 +301,7 @@ export function interpretaRispostaRecuperaEsito(httpBody: string): EsitoRecupero
     }
   }
 
-  const risposta = (body?.recuperaEsitoResponse as Record<string, unknown> | undefined)
-    ?.recuperaEsitoReturn as Record<string, unknown> | undefined
+  const risposta = body?.Output as Record<string, unknown> | undefined
   if (!risposta) {
     return {
       ok: false,
