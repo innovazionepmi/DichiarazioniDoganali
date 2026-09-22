@@ -399,19 +399,37 @@ export async function analizzaExcelLetture(
     if (colonneTipo.length === 0) continue;
 
     const candidati = (contatori ?? []).filter((c) => c.tipo === tipo);
+    const nomeColonna = tipo === "produzione" ? "Produzione" : "Immissioni";
     if (candidati.length === 0) {
       avvisi.push(
-        `Nessun contatore attivo di tipo "${tipo}" su questo impianto: colonna "${tipo === "produzione" ? "Produzione" : "Immissioni"}" del file ignorata.`,
+        `Nessun contatore attivo di tipo "${tipo}" su questo impianto: colonna "${nomeColonna}" del file ignorata.`,
       );
       continue;
     }
+
+    let contatore = candidati[0];
     if (candidati.length > 1) {
-      avvisi.push(
-        `Trovati ${candidati.length} contatori attivi di tipo "${tipo}" su questo impianto: il file riporta un unico totale, non so a quale abbinarlo. Colonna ignorata — importa questi mesi a mano.`,
-      );
-      continue;
+      // Il foglio annuale riporta un unico totale per tipo, senza dire a
+      // quale contatore appartiene — ma il foglio "procedura" (se presente)
+      // riporta la matricola: la usiamo per scegliere tra i candidati invece
+      // di rinunciare subito (richiesta esplicita dell'utente).
+      const matricolaAttesa =
+        tipo === "produzione"
+          ? parsed.matricolaProduzione
+          : parsed.matricolaImmissione;
+      const abbinato = matricolaAttesa
+        ? candidati.find((c) => c.matricola === matricolaAttesa)
+        : undefined;
+      if (!abbinato) {
+        avvisi.push(
+          matricolaAttesa
+            ? `Trovati ${candidati.length} contatori attivi di tipo "${tipo}": la matricola indicata nel foglio "procedura" (${matricolaAttesa}) non corrisponde a nessuno di questi (${candidati.map((c) => c.matricola).join(", ")}) — verifica le matricole in anagrafica. Colonna "${nomeColonna}" ignorata.`
+            : `Trovati ${candidati.length} contatori attivi di tipo "${tipo}" e nessuna matricola nel foglio "procedura" per disambiguare. Colonna "${nomeColonna}" ignorata — importa questi mesi a mano.`,
+        );
+        continue;
+      }
+      contatore = abbinato;
     }
-    const contatore = candidati[0];
     if (contatore.modalita_letture !== "cumulativa") {
       avvisi.push(
         `Il contatore ${contatore.matricola} non è impostato in modalità "lettura cumulativa" (scheda impianto): colonna "${tipo === "produzione" ? "Produzione" : "Immissioni"}" ignorata.`,

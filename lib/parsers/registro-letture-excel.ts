@@ -49,6 +49,12 @@ export interface RisultatoParsingRegistroExcel {
   codiceFiscale: string | null;
   colonne: ColonnaLetture[];
   anniTrovati: number[];
+  // Dal foglio "procedura" (se presente): matricola del contatore di
+  // produzione/immissione, usata a valle per abbinare la colonna giusta
+  // quando l'impianto ha più contatori attivi dello stesso tipo (il foglio
+  // annuale riporta solo un totale, senza dire a quale contatore appartiene).
+  matricolaProduzione: string | null;
+  matricolaImmissione: string | null;
   avvisi: string[];
 }
 
@@ -101,6 +107,70 @@ function trovaValoreEtichetta(
     }
   }
   return null;
+}
+
+// Il foglio "procedura" (se presente) riporta due blocchi "Matricola
+// contatore" (etichetta in colonna B, valore nella cella a sinistra —
+// ordine invertito rispetto ai fogli anno): il blocco che ha anche "Tipo di
+// cessione" tra le righe seguenti riguarda il contatore di immissione
+// (vettoriamento/cessione, Quadro G), l'altro il contatore di produzione.
+// Solo lettura best-effort: se il foglio non c'è o non ha questa forma,
+// torna semplicemente null (l'abbinamento a valle userà solo il tipo).
+function parseProcedura(sheet: ExcelJS.Worksheet | undefined): {
+  produzione: string | null;
+  immissione: string | null;
+} {
+  if (!sheet) return { produzione: null, immissione: null };
+  const ws = sheet;
+
+  const blocchi: { riga: number; matricola: string }[] = [];
+  for (let r = 1; r <= ws.rowCount; r++) {
+    const row = ws.getRow(r);
+    for (let c = 1; c <= row.cellCount; c++) {
+      if (
+        testoCella(row.getCell(c).value).toLowerCase() !== "matricola contatore"
+      )
+        continue;
+      for (let c2 = c - 1; c2 >= 1; c2--) {
+        const valore = testoCella(row.getCell(c2).value);
+        if (valore) {
+          blocchi.push({ riga: r, matricola: valore });
+          break;
+        }
+      }
+      break;
+    }
+  }
+
+  function bloccoHaCessione(rigaInizio: number, rigaFine: number): boolean {
+    for (let r = rigaInizio; r < rigaFine; r++) {
+      const row = ws.getRow(r);
+      for (let c = 1; c <= row.cellCount; c++) {
+        if (
+          testoCella(row.getCell(c).value)
+            .toLowerCase()
+            .includes("tipo di cessione")
+        ) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  let produzione: string | null = null;
+  let immissione: string | null = null;
+  blocchi.forEach((blocco, i) => {
+    const rigaFine =
+      i + 1 < blocchi.length ? blocchi[i + 1].riga : ws.rowCount + 1;
+    if (bloccoHaCessione(blocco.riga, rigaFine)) {
+      if (immissione === null) immissione = blocco.matricola;
+    } else if (produzione === null) {
+      produzione = blocco.matricola;
+    }
+  });
+
+  return { produzione, immissione };
 }
 
 function parseFoglioAnno(
@@ -214,6 +284,8 @@ export async function parseRegistroLettureExcel(
       codiceFiscale: null,
       colonne: [],
       anniTrovati: [],
+      matricolaProduzione: null,
+      matricolaImmissione: null,
       avvisi: [
         `Impossibile leggere il file Excel: ${e instanceof Error ? e.message : String(e)}`,
       ],
@@ -232,9 +304,17 @@ export async function parseRegistroLettureExcel(
       codiceFiscale: null,
       colonne: [],
       anniTrovati: [],
+      matricolaProduzione: null,
+      matricolaImmissione: null,
       avvisi,
     };
   }
+
+  const foglioProcedura = workbook.worksheets.find(
+    (ws) => ws.name.trim().toLowerCase() === "procedura",
+  );
+  const { produzione: matricolaProduzione, immissione: matricolaImmissione } =
+    parseProcedura(foglioProcedura);
 
   let clienteRagioneSociale: string | null = null;
   let codiceFiscale: string | null = null;
@@ -268,6 +348,8 @@ export async function parseRegistroLettureExcel(
     codiceFiscale,
     colonne,
     anniTrovati: anniTrovati.sort((a, b) => a - b),
+    matricolaProduzione,
+    matricolaImmissione,
     avvisi,
   };
 }

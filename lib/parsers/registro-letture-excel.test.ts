@@ -147,4 +147,39 @@ describe("parseRegistroLettureExcel", () => {
       'Nessun foglio con nome anno (es. "2026") trovato nel file.',
     ]);
   });
+
+  it("estrae dal foglio 'procedura' la matricola di produzione e immissione", async () => {
+    const buffer = await creaWorkbookFinto();
+    const workbook = new ExcelJS.Workbook();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await workbook.xlsx.load(buffer as any);
+
+    const procedura = workbook.addWorksheet("procedura");
+    // Blocco immissione (ha "Tipo di cessione" tra le righe seguenti) —
+    // stessa forma del file reale: etichetta in colonna B, valore in A.
+    procedura.getCell("A1").value = "MATR-IMM";
+    procedura.getCell("B1").value = "Matricola contatore";
+    procedura.getCell("A7").value = "b-vettoriamento";
+    procedura.getCell("B7").value = "Tipo di cessione (es vettoriamento)";
+    // Blocco produzione (nessun "Tipo di cessione" nel blocco).
+    procedura.getCell("A9").value = "MATR-PROD";
+    procedura.getCell("B9").value = "Matricola contatore";
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const bufferConProcedura = Buffer.from(
+      (await workbook.xlsx.writeBuffer()) as any,
+    );
+    const risultato = await parseRegistroLettureExcel(bufferConProcedura);
+
+    expect(risultato.matricolaProduzione).toBe("MATR-PROD");
+    expect(risultato.matricolaImmissione).toBe("MATR-IMM");
+  });
+
+  it("torna matricole null quando il foglio 'procedura' non c'è", async () => {
+    const buffer = await creaWorkbookFinto();
+    const risultato = await parseRegistroLettureExcel(buffer);
+
+    expect(risultato.matricolaProduzione).toBeNull();
+    expect(risultato.matricolaImmissione).toBeNull();
+  });
 });
