@@ -1619,6 +1619,72 @@ deliberatamente smesso di compilare su richiesta esplicita di Paolo ("non
 si è mai sicuri di chi è effettivamente la persona tenuta a pagare") — da
 aggiungere solo se richiesto esplicitamente, con lo stesso avvertimento.
 
+## Fix: "Anteprima PDF" falliva in produzione con "SOI not found in JPEG" (2026-09-22)
+
+Dopo il redesign sopra, "Scarica ricevuta" funzionava in staging ma
+"Anteprima PDF" no: errore generico lato client ("Uncaught Error: An
+unexpected response was received from the server"), niente di utile in
+console. I log runtime di Vercel hanno mostrato la causa vera:
+`Error: SOI not found in JPEG` — `pdf-lib` riceveva byte non validi
+leggendo il logo da disco (`readFileSync(TEMPLATE_LOGO_PATH)`).
+
+Ricevuta, anteprima e registro letture leggono lo STESSO file JPEG allo
+stesso modo, ma solo la funzione serverless dell'anteprima falliva:
+sintomo di un problema di bundling/tracciamento degli asset statici di
+Vercel specifico di quella funzione (non riproducibile localmente, non un
+bug nei dati). Fix: eliminata la lettura da disco a runtime, logo
+incorporato come stringa base64 direttamente nel bundle JS
+(`lib/pdf/templates/logo-agenzia-dogane-base64.ts`, generato una tantum da
+`logo-agenzia-dogane.jpg`) — così non dipende più dal file tracing di
+Vercel. Verificato rigenerando il PDF localmente con lo stesso codice.
+
+## Nuova funzione: import letture da Excel (registro letture cliente) (2026-09-22)
+
+Richiesta Paolo: poter caricare, oltre a PDF E-distribuzione e screenshot,
+anche il "registro letture" Excel che già tiene per ciascun cliente
+(letture progressive/cumulative del contatore, un foglio per anno) —
+esplicitamente **non** un template scaricabile da noi da ricompilare, il
+file che Paolo ha già.
+
+- `lib/parsers/registro-letture-excel.ts` (nuovo, con `exceljs`): parsing
+  deterministico (nessuna IA) guidato da ETICHETTE fisse che il file di
+  Paolo usa ("COMMITTENTE", "Codice Fiscale", intestazioni di colonna
+  "Produzione"/"Immissioni", nomi mese in italiano) invece che da
+  coordinate di cella rigide — regge a piccoli spostamenti riga/colonna,
+  ma fallisce in modo esplicito (avviso, non un dato inventato) se le
+  etichette non si trovano. Legge OGNI foglio il cui nome è un anno a 4
+  cifre (ignora es. il foglio "procedura"), quindi un solo file può
+  portare più anni di storico in un colpo.
+- Verificato sul file reale di Scuola Provera (non copiato nel repo):
+  valori identici a quelli già confermati in produzione (Gennaio 2052 kWh,
+  Febbraio 2591 kWh di autoconsumo).
+- `analizzaExcelLetture` in `lib/actions/letture.ts`: abbina le colonne
+  Produzione/Immissioni ai contatori dell'impianto per **tipo** (il file
+  non riporta il POD) — richiede esattamente un contatore attivo per tipo,
+  in modalità "cumulativa" (vedi sezione sotto), altrimenti ignora quella
+  colonna con un avviso chiaro invece di indovinare. Blocca l'import se il
+  codice fiscale nel file non corrisponde al cliente dell'impianto
+  (Paolo gestisce ~86 impianti: file sbagliato = letture false su un
+  contatore reale).
+- Stessa filosofia "mai scrivere senza conferma" del flusso PDF/screenshot
+  già esistente: `ImportaPdfDialog` (rinominare in futuro, ora gestisce
+  anche Excel) mostra la stessa tabella di diff riga per riga prima di
+  scrivere su `letture`, con una colonna "Contatore" in più (un import
+  Excel può coinvolgere produzione E immissione insieme).
+- Migration `20260922120001_letture_origine_excel.sql`: nuovo valore
+  `'excel'` su `origine_lettura_enum` e `'excel_letture'` su
+  `tipo_documento_enum` (il file caricato viene comunque archiviato su
+  Storage come gli altri).
+- `upsertLettureSchema` (max righe per upsert) alzato da 200 a 1000: un
+  import Excel di più anni di storico (visto sul file reale: 10 anni ×
+  12 mesi × 2 contatori ≈ 230 righe) superava il vecchio limite pensato
+  per un salvataggio manuale di un anno solo.
+
+Non testato in staging con un file di un cliente diverso da Scuola
+Provera: se il layout di qualche cliente si scosta troppo da quello
+osservato, l'import fallirà con un avviso esplicito invece di importare
+dati sbagliati — da verificare al primo caso reale che lo fa scattare.
+
 ## Selettore indirizzo provincia/comune + fix province troncate (2026-09-10)
 
 Feedback Paolo/Emilio sulle schede cliente/impianto: la maggior parte degli
