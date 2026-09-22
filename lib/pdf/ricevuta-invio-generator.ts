@@ -1,12 +1,14 @@
-import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib"
+import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFImage, type PDFPage } from "pdf-lib"
 import type { DichiarazioneEeSemestraleInput } from "../validation/dichiarazione-ee.schema"
+import { LOGO_AGENZIA_DOGANE_BASE64 } from "./templates/logo-agenzia-dogane-base64"
 
 // Ricevuta PDF dell'invio S2S — S2S non restituisce un PDF pronto come
 // l'invio manuale U2S (solo XML OUTPUT/ESITO, vedi PROJECT_STATUS.md), lo
-// costruiamo noi. Impaginazione ispirata a un vero PDF di dichiarazione U2S
-// storico fornito dall'utente (frontespizio + Quadro A + Quadro G), non
-// un modulo ufficiale — qui in più mostriamo IUT ed esito ADM, assenti nel
-// vecchio flusso manuale.
+// costruiamo noi. Impaginazione (logo, tabelle a sezioni con intestazione
+// blu, righe TOTALE MESE/TOTALE QUADRO) ricalcata su un PDF reale fornito
+// da Paolo come riferimento di stile — non è un modulo ufficiale ADM, ma
+// visivamente allineato a quello che si aspetta di vedere. Stesso logo già
+// usato dal registro letture (lib/pdf/templates/logo-agenzia-dogane.jpg).
 
 export interface RicevutaInvioInput {
   iut: string
@@ -22,73 +24,172 @@ export interface RicevutaInvioInput {
 const PAGE_WIDTH = 595.28
 const PAGE_HEIGHT = 841.89
 const MARGIN = 45
+const LARGHEZZA_UTILE = PAGE_WIDTH - 2 * MARGIN
 
-function centrato(page: PDFPage, font: PDFFont, text: string, y: number, size: number) {
-  const width = font.widthOfTextAtSize(text, size)
-  page.drawText(text, { x: (PAGE_WIDTH - width) / 2, y, size, font })
+// Blu ADM approssimato dal PDF di riferimento — intestazioni di sezione e
+// di tabella, sia sul frontespizio che sui Quadri.
+const BLU_TESTATA = rgb(0.11, 0.29, 0.49)
+const BIANCO = rgb(1, 1, 1)
+const BORDO_CHIARO = rgb(0.75, 0.75, 0.75)
+
+const MESI_LABEL = [
+  "Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno",
+  "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre",
+]
+
+// Tipologia fissa "L2" (Allegato 1 Circolare 6/2026) e Matr non compilata
+// (Circolare 20/2026, "per differenza") — stessa scelta del generatore XML
+// (lib/xml/dichiarazione-ee-semestrale.ts), qui solo per la colonna
+// visibile della tabella: il tipo di dato che arriva da `dati.quadroC` non
+// porta con sé questi due valori (lo schema di input non li prevede, sono
+// sempre gli stessi per il profilo coperto).
+const TIPOLOGIA_QUADRO_C = "L2"
+
+function testoDestra(page: PDFPage, font: PDFFont, text: string, xDestra: number, y: number, size: number) {
+  const larghezza = font.widthOfTextAtSize(text, size)
+  page.drawText(text, { x: xDestra - larghezza, y, size, font })
 }
 
-function bordoPagina(page: PDFPage) {
-  page.drawRectangle({
-    x: MARGIN - 10,
-    y: MARGIN - 10,
-    width: PAGE_WIDTH - 2 * (MARGIN - 10),
-    height: PAGE_HEIGHT - 2 * (MARGIN - 10),
-    borderWidth: 1,
-    borderColor: rgb(0, 0, 0),
+// Tronca con "…" se il testo non entra nella larghezza data — soprattutto
+// per colonne come "Id. officina dest." dove il formato del valore reale
+// (codice ditta/CF/PIVA) è vario e non sempre corto quanto negli esempi.
+function troncaPerLarghezza(font: PDFFont, text: string, size: number, larghezzaMax: number): string {
+  if (font.widthOfTextAtSize(text, size) <= larghezzaMax) return text
+  let troncato = text
+  while (troncato.length > 1 && font.widthOfTextAtSize(`${troncato}…`, size) > larghezzaMax) {
+    troncato = troncato.slice(0, -1)
+  }
+  return `${troncato}…`
+}
+
+function disegnaLogo(page: PDFPage, logo: PDFImage, larghezza: number) {
+  const altezza = larghezza * (logo.height / logo.width)
+  const y = PAGE_HEIGHT - MARGIN - altezza
+  page.drawImage(logo, { x: MARGIN, y, width: larghezza, height: altezza })
+  return y
+}
+
+// Blocco "sezione informativa" del frontespizio (Officine / Periodo di
+// riferimento / Rappresentante legale nel riferimento di Paolo): barra blu
+// col titolo, poi righe etichetta/valore con bordo leggero. Ritorna la y
+// dopo il blocco.
+function disegnaSezioneInfo(
+  page: PDFPage,
+  font: PDFFont,
+  fontBold: PDFFont,
+  y: number,
+  titolo: string,
+  righe: [string, string][]
+) {
+  const altezzaBarra = 18
+  const altezzaRiga = 18
+  const larghezzaEtichetta = LARGHEZZA_UTILE * 0.32
+
+  page.drawRectangle({ x: MARGIN, y: y - altezzaBarra, width: LARGHEZZA_UTILE, height: altezzaBarra, color: BLU_TESTATA })
+  page.drawText(titolo, { x: MARGIN + 6, y: y - altezzaBarra + 5, size: 9, font: fontBold, color: BIANCO })
+  let yCorrente = y - altezzaBarra
+
+  righe.forEach(([etichetta, valore]) => {
+    page.drawRectangle({
+      x: MARGIN,
+      y: yCorrente - altezzaRiga,
+      width: LARGHEZZA_UTILE,
+      height: altezzaRiga,
+      borderWidth: 0.5,
+      borderColor: BORDO_CHIARO,
+    })
+    page.drawLine({
+      start: { x: MARGIN + larghezzaEtichetta, y: yCorrente },
+      end: { x: MARGIN + larghezzaEtichetta, y: yCorrente - altezzaRiga },
+      thickness: 0.5,
+      color: BORDO_CHIARO,
+    })
+    page.drawText(etichetta, { x: MARGIN + 6, y: yCorrente - altezzaRiga + 5, size: 9, font: fontBold, color: BLU_TESTATA })
+    page.drawText(valore, { x: MARGIN + larghezzaEtichetta + 6, y: yCorrente - altezzaRiga + 5, size: 9, font })
+    yCorrente -= altezzaRiga
   })
+
+  return yCorrente - 16
 }
 
 type RigaTabella = (string | number)[]
+type GruppoMese = { nomeMese: string; righe: RigaTabella[]; totaleMese: number }
 
-function disegnaTabella(
+// Tabella di un Quadro, in stile "riferimento Paolo": intestazione con
+// sfondo blu e testo bianco, una riga TOTALE MESE dopo i contatori di ogni
+// mese (utile quando un mese ha più contatori — qui quasi sempre uno solo,
+// ma la struttura generale lo prevede), riga TOTALE QUADRO finale in
+// risalto. L'ultima colonna (kWh) è allineata a destra come nel
+// riferimento, le altre a sinistra.
+function disegnaTabellaQuadro(
   page: PDFPage,
   font: PDFFont,
   fontBold: PDFFont,
   yInizio: number,
   intestazioni: string[],
   larghezze: number[],
-  righe: RigaTabella[],
-  rigaTotale?: RigaTabella
+  gruppi: GruppoMese[],
+  etichettaTotaleQuadro: string,
+  totaleQuadro: number
 ) {
   const larghezzaTotale = larghezze.reduce((a, b) => a + b, 0)
   const altezzaRiga = 16
-  const numeroRighe = righe.length + 1 + (rigaTotale ? 1 : 0)
-  const yFine = yInizio - altezzaRiga * numeroRighe
-
   const colonneX = [MARGIN]
   for (const l of larghezze) colonneX.push(colonneX[colonneX.length - 1] + l)
+  const xDestraTabella = MARGIN + larghezzaTotale
+  const indiceUltimaColonna = intestazioni.length - 1
 
-  for (let r = 0; r <= numeroRighe; r++) {
-    const yLinea = yInizio - r * altezzaRiga
-    page.drawLine({
-      start: { x: MARGIN, y: yLinea },
-      end: { x: MARGIN + larghezzaTotale, y: yLinea },
-      thickness: r <= 1 ? 1 : 0.5,
-      color: rgb(0, 0, 0),
-    })
-  }
-  for (const x of colonneX) {
-    page.drawLine({ start: { x, y: yInizio }, end: { x, y: yFine }, thickness: 0.5, color: rgb(0, 0, 0) })
-  }
+  let y = yInizio
 
+  // Intestazione
+  page.drawRectangle({ x: MARGIN, y: y - altezzaRiga, width: larghezzaTotale, height: altezzaRiga, color: BLU_TESTATA })
   intestazioni.forEach((testo, i) => {
-    page.drawText(testo, { x: colonneX[i] + 4, y: yInizio - altezzaRiga + 4, size: 8, font: fontBold })
+    page.drawText(testo, { x: colonneX[i] + 4, y: y - altezzaRiga + 4, size: 7.5, font: fontBold, color: BIANCO })
   })
-  righe.forEach((riga, ri) => {
-    const y = yInizio - altezzaRiga * (ri + 2) + 4
-    riga.forEach((cella, ci) => {
-      page.drawText(String(cella), { x: colonneX[ci] + 4, y, size: 8, font })
-    })
-  })
-  if (rigaTotale) {
-    const y = yInizio - altezzaRiga * (righe.length + 2) + 4
-    rigaTotale.forEach((cella, ci) => {
-      page.drawText(String(cella), { x: colonneX[ci] + 4, y, size: 8, font: fontBold })
+  y -= altezzaRiga
+
+  function bordoRiga(yRiga: number) {
+    page.drawRectangle({
+      x: MARGIN,
+      y: yRiga - altezzaRiga,
+      width: larghezzaTotale,
+      height: altezzaRiga,
+      borderWidth: 0.5,
+      borderColor: BORDO_CHIARO,
     })
   }
 
-  return yFine
+  for (const gruppo of gruppi) {
+    for (const riga of gruppo.righe) {
+      bordoRiga(y)
+      riga.forEach((cella, ci) => {
+        const testo = String(cella)
+        if (ci === indiceUltimaColonna) {
+          testoDestra(page, font, testo, colonneX[ci + 1] - 4, y - altezzaRiga + 4, 8)
+        } else {
+          const disponibile = larghezze[ci] - 8
+          page.drawText(troncaPerLarghezza(font, testo, 8, disponibile), {
+            x: colonneX[ci] + 4,
+            y: y - altezzaRiga + 4,
+            size: 8,
+            font,
+          })
+        }
+      })
+      y -= altezzaRiga
+    }
+    bordoRiga(y)
+    testoDestra(page, fontBold, `TOTALE MESE ${gruppo.nomeMese}`, xDestraTabella - larghezze[indiceUltimaColonna] - 4, y - altezzaRiga + 4, 8)
+    testoDestra(page, fontBold, String(gruppo.totaleMese), xDestraTabella - 4, y - altezzaRiga + 4, 8)
+    y -= altezzaRiga
+  }
+
+  bordoRiga(y)
+  testoDestra(page, fontBold, etichettaTotaleQuadro, xDestraTabella - larghezze[indiceUltimaColonna] - 4, y - altezzaRiga + 4, 8)
+  testoDestra(page, fontBold, String(totaleQuadro), xDestraTabella - 4, y - altezzaRiga + 4, 8)
+  y -= altezzaRiga
+
+  return y
 }
 
 // Pagine Quadro A/C/G, condivise tra la ricevuta post-invio e l'anteprima
@@ -97,124 +198,131 @@ function disegnaTabella(
 function disegnaQuadri(pdfDoc: PDFDocument, helvetica: PDFFont, helveticaBold: PDFFont, dati: DichiarazioneEeSemestraleInput) {
   // --- Pagina 2: Quadro A ---
   const p2 = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT])
-  bordoPagina(p2)
-  let y2 = PAGE_HEIGHT - 70
-  centrato(p2, helveticaBold, "QUADRO A — ENERGIA ELETTRICA PRODOTTA", y2, 12)
-  y2 -= 30
+  let y2 = PAGE_HEIGHT - MARGIN - 24
+  p2.drawText("QUADRO A - PRODUZIONE", { x: MARGIN, y: y2, size: 13, font: helveticaBold })
+  y2 -= 24
 
-  const righeA: RigaTabella[] = dati.quadroA.flatMap((mese) =>
-    mese.contatori.map((c) => [
-      mese.numMese,
+  const gruppiA: GruppoMese[] = dati.quadroA.map((mese) => ({
+    nomeMese: MESI_LABEL[mese.numMese - 1],
+    righe: mese.contatori.map((c) => [
+      MESI_LABEL[mese.numMese - 1],
       c.matricola,
-      c.lettA.toFixed(2),
-      c.lettP.toFixed(2),
-      c.diffLett.toFixed(2),
-      c.costLett.toFixed(2),
+      c.lettA.toFixed(0),
+      c.lettP.toFixed(0),
+      c.diffLett.toFixed(4),
+      c.costLett.toFixed(4),
       Math.round(c.kwh),
-    ])
-  )
-  const totaleA = dati.quadroA.reduce(
-    (acc, mese) => acc + mese.contatori.reduce((a, c) => a + Math.round(c.kwh), 0),
-    0
-  )
-  disegnaTabella(
+    ]),
+    totaleMese: mese.contatori.reduce((acc, c) => acc + Math.round(c.kwh), 0),
+  }))
+  const totaleA = gruppiA.reduce((acc, g) => acc + g.totaleMese, 0)
+  disegnaTabellaQuadro(
     p2,
     helvetica,
     helveticaBold,
     y2,
-    ["Mese", "Matricola", "Lett. Attuale", "Lett. Prec.", "Differenza", "Cost.", "kWh"],
-    [40, 90, 75, 75, 75, 55, 60],
-    righeA,
-    ["", "", "", "", "", "TOTALE", totaleA]
+    ["Mese", "Matricola", "Lettura finale", "Lettura iniziale", "Differenza", "Costante", "kWh"],
+    [58, 78, 68, 72, 68, 58, 55],
+    gruppiA,
+    "TOTALE QUADRO A kWh",
+    totaleA
   )
 
   // --- Pagina 3: Quadro C (autoconsumo esente) ---
   const p3c = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT])
-  bordoPagina(p3c)
-  let y3c = PAGE_HEIGHT - 70
-  centrato(p3c, helveticaBold, "QUADRO C — CONSUMI PROPRI ESENTI", y3c, 12)
-  y3c -= 30
+  let y3c = PAGE_HEIGHT - MARGIN - 24
+  p3c.drawText("QUADRO C - CONSUMI PROPRI ESENTI/NON SOTTOPOSTI AD ACCISA", { x: MARGIN, y: y3c, size: 12, font: helveticaBold })
+  y3c -= 24
 
-  const righeC: RigaTabella[] = dati.quadroC.map((mese) => [mese.numMese, "L2", mese.kwh])
-  const totaleC = dati.quadroC.reduce((acc, mese) => acc + mese.kwh, 0)
-  disegnaTabella(
+  const gruppiC: GruppoMese[] = dati.quadroC.map((mese) => ({
+    nomeMese: MESI_LABEL[mese.numMese - 1],
+    righe: [[MESI_LABEL[mese.numMese - 1], TIPOLOGIA_QUADRO_C, "-", "-", "-", "-", Math.round(mese.kwh)]],
+    totaleMese: Math.round(mese.kwh),
+  }))
+  const totaleC = gruppiC.reduce((acc, g) => acc + g.totaleMese, 0)
+  disegnaTabellaQuadro(
     p3c,
     helvetica,
     helveticaBold,
     y3c,
-    ["Mese", "Tipologia", "kWh"],
-    [60, 90, 65],
-    righeC,
-    ["", "TOTALE", totaleC]
+    ["Mese", "Codice Uso", "Matricola", "Lettura finale", "Lettura iniziale", "Differenza", "kWh"],
+    [55, 55, 65, 68, 72, 65, 65],
+    gruppiC,
+    "TOTALE QUADRO C kWh",
+    totaleC
   )
 
   // --- Pagina 4: Quadro G (se presente) ---
   if (dati.quadroG) {
     const p3 = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT])
-    bordoPagina(p3)
-    let y3 = PAGE_HEIGHT - 70
-    centrato(p3, helveticaBold, "QUADRO G — ENERGIA ELETTRICA CEDUTA", y3, 12)
-    y3 -= 30
+    let y3 = PAGE_HEIGHT - MARGIN - 24
+    p3.drawText("QUADRO G - ENERGIA ELETTRICA CEDUTA", { x: MARGIN, y: y3, size: 13, font: helveticaBold })
+    y3 -= 24
 
-    const righeG: RigaTabella[] = dati.quadroG.flatMap((mese) =>
-      mese.contatori.map((c) => [
-        mese.numMese,
+    const gruppiG: GruppoMese[] = dati.quadroG.map((mese) => ({
+      nomeMese: MESI_LABEL[mese.numMese - 1],
+      righe: mese.contatori.map((c) => [
+        MESI_LABEL[mese.numMese - 1],
         c.tipo,
         c.id,
         c.matricola,
-        c.lettA.toFixed(2),
-        c.lettP.toFixed(2),
+        c.lettA.toFixed(0),
+        c.lettP.toFixed(0),
+        c.diffLett.toFixed(4),
+        c.costLett.toFixed(4),
         Math.round(c.kwh),
-      ])
-    )
-    const totaleG = dati.quadroG.reduce(
-      (acc, mese) => acc + mese.contatori.reduce((a, c) => a + Math.round(c.kwh), 0),
-      0
-    )
-    disegnaTabella(
+      ]),
+      totaleMese: mese.contatori.reduce((acc, c) => acc + Math.round(c.kwh), 0),
+    }))
+    const totaleG = gruppiG.reduce((acc, g) => acc + g.totaleMese, 0)
+    const yFineTabella = disegnaTabellaQuadro(
       p3,
       helvetica,
       helveticaBold,
       y3,
-      ["Mese", "Tipo", "Cod. Identif.", "Matricola", "Lett. Attuale", "Lett. Prec.", "kWh"],
-      [40, 35, 90, 90, 75, 75, 65],
-      righeG,
-      ["", "", "", "", "", "TOTALE", totaleG]
+      ["Mese", "Tipologia", "Id. officina dest.", "Matricola", "Lett. finale", "Lett. iniziale", "Diff.", "Costante", "kWh"],
+      [45, 48, 92, 65, 55, 55, 45, 45, 45],
+      gruppiG,
+      "TOTALE QUADRO G kWh",
+      totaleG
     )
+
+    const legenda = [
+      "Legenda tipologia cessione:",
+      "A = Cessione a consorziati/consociati; B = Vettoriamento; C = Cessione ad altra officina elettrica; D = Distribuzione per conto terzi;",
+      "E = Cessione UE; F = Cessione extra UE; R = Cessione alla rete da impianto di accumulo.",
+    ]
+    let yLegenda = yFineTabella - 14
+    legenda.forEach((riga, i) => {
+      p3.drawText(riga, { x: MARGIN, y: yLegenda, size: 7.5, font: i === 0 ? helveticaBold : helvetica, color: rgb(0.35, 0.35, 0.35) })
+      yLegenda -= 11
+    })
   }
 }
 
 function disegnaTestataFrontespizio(
   p1: PDFPage,
+  logo: PDFImage,
   helvetica: PDFFont,
   helveticaBold: PDFFont,
-  input: { codDitta: string; clienteRagioneSociale: string; impiantoComune: string; impiantoIndirizzo: string; anno: number; periodoRiferimento: number }
+  input: { codDitta: string; clienteRagioneSociale: string; anno: number; periodoRiferimento: number }
 ) {
-  bordoPagina(p1)
-  let y = PAGE_HEIGHT - 70
+  const yLogo = disegnaLogo(p1, logo, 140)
+  let y = yLogo - 20
 
-  centrato(p1, helveticaBold, "AGENZIA DELLE DOGANE E DEI MONOPOLI", y, 14)
-  y -= 40
+  p1.drawText("DICHIARAZIONE SEMESTRALE - ENERGIA ELETTRICA", { x: MARGIN, y, size: 15, font: helveticaBold })
+  y -= 28
 
-  const campi: [string, string][] = [
-    ["Codice ditta", `IT00${input.codDitta}`],
-    ["Denominazione", input.clienteRagioneSociale],
-    ["Comune", input.impiantoComune],
-    ["Indirizzo", input.impiantoIndirizzo],
-  ]
-  for (const [etichetta, valore] of campi) {
-    p1.drawText(etichetta, { x: MARGIN, y, size: 10, font: helvetica })
-    p1.drawText(valore, { x: MARGIN + 150, y, size: 10, font: helveticaBold })
-    y -= 18
-  }
-  y -= 20
+  y = disegnaSezioneInfo(p1, helvetica, helveticaBold, y, "Officine", [
+    ["Attività", "Off. produzione fonti rinnovabili uso esente"],
+    ["Codice accisa", `IT00${input.codDitta}`],
+    ["Ragione Sociale", input.clienteRagioneSociale],
+  ])
 
-  centrato(p1, helveticaBold, "IMPOSTE SUL CONSUMO DI ENERGIA ELETTRICA", y, 12)
-  y -= 20
-  centrato(p1, helveticaBold, "Dichiarazione Semestrale — invio System to System (S2S)", y, 11)
-  y -= 16
-  centrato(p1, helvetica, `Periodo: Anno ${input.anno} — ${input.periodoRiferimento}° semestre`, y, 10)
-  y -= 50
+  y = disegnaSezioneInfo(p1, helvetica, helveticaBold, y, "Periodo di riferimento", [
+    ["Anno", String(input.anno)],
+    ["Semestre di riferimento", `${input.periodoRiferimento}° semestre`],
+  ])
 
   return y
 }
@@ -223,29 +331,23 @@ export async function generaRicevutaInvioPdf(input: RicevutaInvioInput): Promise
   const pdfDoc = await PDFDocument.create()
   const helvetica = await pdfDoc.embedFont(StandardFonts.Helvetica)
   const helveticaBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold)
+  const logo = await pdfDoc.embedJpg(Buffer.from(LOGO_AGENZIA_DOGANE_BASE64, "base64"))
 
   // --- Pagina 1: frontespizio + esito ---
   const p1 = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT])
-  let y = disegnaTestataFrontespizio(p1, helvetica, helveticaBold, {
+  const y = disegnaTestataFrontespizio(p1, logo, helvetica, helveticaBold, {
     codDitta: input.dati.codDitta,
     clienteRagioneSociale: input.clienteRagioneSociale,
-    impiantoComune: input.impiantoComune,
-    impiantoIndirizzo: input.impiantoIndirizzo,
     anno: input.dati.anno,
     periodoRiferimento: input.dati.periodoRiferimento,
   })
 
-  const esito: [string, string][] = [
+  disegnaSezioneInfo(p1, helvetica, helveticaBold, y, "Esito invio ADM", [
     ["IUT", input.iut],
     ["Data registrazione", input.dataRegistrazione],
     ["Esito ADM", input.esitoDescrizione ?? "Non ancora disponibile"],
     ...(input.esitoCodice ? ([["Codice esito", input.esitoCodice]] as [string, string][]) : []),
-  ]
-  for (const [etichetta, valore] of esito) {
-    p1.drawText(`${etichetta}:`, { x: MARGIN, y, size: 10, font: helvetica })
-    p1.drawText(valore, { x: MARGIN + 150, y, size: 10, font: helveticaBold })
-    y -= 18
-  }
+  ])
 
   disegnaQuadri(pdfDoc, helvetica, helveticaBold, input.dati)
 
@@ -269,32 +371,22 @@ export async function generaAnteprimaDichiarazionePdf(
   const pdfDoc = await PDFDocument.create()
   const helvetica = await pdfDoc.embedFont(StandardFonts.Helvetica)
   const helveticaBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold)
+  const logo = await pdfDoc.embedJpg(Buffer.from(LOGO_AGENZIA_DOGANE_BASE64, "base64"))
 
   const p1 = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT])
-  const y = disegnaTestataFrontespizio(p1, helvetica, helveticaBold, {
+  const y = disegnaTestataFrontespizio(p1, logo, helvetica, helveticaBold, {
     codDitta: input.dati.codDitta,
     clienteRagioneSociale: input.clienteRagioneSociale,
-    impiantoComune: input.impiantoComune,
-    impiantoIndirizzo: input.impiantoIndirizzo,
     anno: input.dati.anno,
     periodoRiferimento: input.dati.periodoRiferimento,
   })
 
-  centrato(p1, helveticaBold, "ANTEPRIMA — DOCUMENTO NON INVIATO", y - 10, 12)
-  centrato(
-    p1,
-    helvetica,
-    "Solo per verifica prima dell'invio all'Agenzia delle Dogane: non ha valore ufficiale.",
-    y - 28,
-    9
-  )
-  centrato(
-    p1,
-    helvetica,
-    `Generato il ${new Date().toLocaleDateString("it-IT")}`,
-    y - 44,
-    9
-  )
+  disegnaSezioneInfo(p1, helvetica, helveticaBold, y, "Anteprima - documento non inviato", [
+    ["Stato", "Bozza, non inviata all'Agenzia delle Dogane e dei Monopoli"],
+    ["Comune impianto", input.impiantoComune || "-"],
+    ["Indirizzo impianto", input.impiantoIndirizzo || "-"],
+    ["Generato il", new Date().toLocaleDateString("it-IT")],
+  ])
 
   disegnaQuadri(pdfDoc, helvetica, helveticaBold, input.dati)
 
