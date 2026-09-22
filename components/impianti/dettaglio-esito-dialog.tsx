@@ -39,11 +39,13 @@ export function DettaglioEsitoDialog({
   const [pending, startTransition] = useTransition()
   const [risultato, setRisultato] = useState<Risultato | null>(null)
   const [erroreCaricamento, setErroreCaricamento] = useState<string | null>(null)
+  const [dettaglioTecnico, setDettaglioTecnico] = useState<string | null>(null)
 
   useEffect(() => {
     if (!open) return
     startTransition(async () => {
       setErroreCaricamento(null)
+      setDettaglioTecnico(null)
       setRisultato(null)
       const result = await recuperaDettaglioEsitoReale(dichiarazioneId)
       if ("error" in result) {
@@ -52,6 +54,9 @@ export function DettaglioEsitoDialog({
       }
       if (!result.ok) {
         setErroreCaricamento(result.messaggio)
+        if ("dettaglioTecnico" in result && result.dettaglioTecnico) {
+          setDettaglioTecnico(result.dettaglioTecnico)
+        }
         return
       }
       setRisultato(result)
@@ -72,6 +77,14 @@ export function DettaglioEsitoDialog({
           <p className="text-sm text-muted-foreground">Caricamento…</p>
         )}
         {erroreCaricamento && <p className="text-sm text-destructive">{erroreCaricamento}</p>}
+        {dettaglioTecnico && (
+          <details className="text-xs text-muted-foreground" open>
+            <summary className="cursor-pointer select-none">Risposta grezza di ADM</summary>
+            <pre className="mt-1 max-h-64 overflow-auto whitespace-pre-wrap rounded-md bg-muted p-2">
+              {dettaglioTecnico}
+            </pre>
+          </details>
+        )}
 
         {risultato && (
           <div className="grid gap-3">
