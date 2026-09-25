@@ -108,6 +108,11 @@ export function DichiarazioneSection({
       }
       if (!result.ok) {
         setErrore(result)
+        // Un esito negativo (197/198) è comunque un dato nuovo salvato a DB
+        // da controllaStatoDichiarazioneReale (non solo un errore tecnico
+        // nostro): senza questo refresh la riga in tabella restava con lo
+        // stato/bottone vecchi finché non si ricaricava la pagina a mano.
+        router.refresh()
         return
       }
       toast.success(`Stato: ${result.descrizione}`)

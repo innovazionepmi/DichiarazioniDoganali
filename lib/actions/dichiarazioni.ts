@@ -491,12 +491,22 @@ export async function controllaStatoDichiarazioneReale(
 
   const risultato = await controllaStatoSoap({ ambiente: "produzione", iut: riga.iut })
 
-  if (risultato.ok) {
+  // Un esito 197/198 (categoria "esito_negativo") è una risposta sostanziale
+  // vera di ADM, non un errore tecnico nostro: va salvata a DB come le altre,
+  // non solo mostrata una tantum nel dialog d'errore. Bug reale corretto qui
+  // (2026-09): prima si scriveva SOLO quando risultato.ok===true, quindi un
+  // 198 non veniva mai persistito — la riga restava bloccata sul vecchio "20"
+  // per sempre e il bottone "Riprova invio" (che dipende da esito_codice) non
+  // ricompariva mai.
+  const codiceDaSalvare = risultato.codice
+  const descrizioneDaSalvare = risultato.ok ? risultato.descrizione : risultato.messaggio
+
+  if (codiceDaSalvare) {
     await supabase
       .from("dichiarazioni_ee_semestrali")
       .update({
-        esito_codice: risultato.codice,
-        esito_descrizione: risultato.descrizione,
+        esito_codice: codiceDaSalvare,
+        esito_descrizione: descrizioneDaSalvare,
         esito_aggiornato_at: new Date().toISOString(),
       })
       .eq("id", dichiarazioneId)

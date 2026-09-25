@@ -138,6 +138,32 @@ describe("interpretaCodiceStato", () => {
     const risultato = interpretaCodiceStato('"200"')
     expect(risultato.ok).toBe(true)
   })
+
+  // Bug reale in produzione (2026-09): controllaStatoDichiarazioneReale
+  // (lib/actions/dichiarazioni.ts) salvava esito_codice/esito_descrizione a
+  // DB solo quando risultato.ok===true. Un 198 è "ok: false" (categorizzato
+  // come esito_negativo, non un vero errore tecnico), quindi non veniva mai
+  // persistito: la riga restava bloccata sul vecchio "20" e il bottone
+  // "Riprova invio" non ricompariva mai dopo "Controlla stato". Il campo
+  // `codice` sul ramo ok:false, aggiunto qui, è quello che permette di
+  // salvarlo comunque.
+  it("un esito negativo (197/198) porta comunque il codice per poterlo salvare", () => {
+    const risultato = interpretaCodiceStato("198")
+    expect(risultato.ok).toBe(false)
+    if (!risultato.ok) {
+      expect(risultato.categoria).toBe("esito_negativo")
+      expect(risultato.codice).toBe("198")
+    }
+  })
+
+  it("un errore tecnico (es. certificato) NON porta un codice da salvare come esito", () => {
+    const risultato = interpretaCodiceStato("16")
+    expect(risultato.ok).toBe(false)
+    if (!risultato.ok) {
+      expect(risultato.categoria).toBe("certificato")
+      expect(risultato.codice).toBeUndefined()
+    }
+  })
 })
 
 describe("categorizzaCodice", () => {
