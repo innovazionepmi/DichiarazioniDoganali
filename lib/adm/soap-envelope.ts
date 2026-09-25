@@ -14,7 +14,23 @@ export type EsitoInvioAdm =
 
 export type EsitoControlloStato =
   | { ok: true; codice: string; descrizione: string }
-  | { ok: false; categoria: CategoriaErroreAdm; messaggio: string; dettaglioTecnico?: string }
+  | {
+      ok: false
+      categoria: CategoriaErroreAdm
+      messaggio: string
+      dettaglioTecnico?: string
+      // Presente solo per categoria "esito_negativo" (197/198): un esito
+      // sostanziale reale di ADM, non un errore tecnico nostro (certificato/
+      // rete/xml) — chi chiama deve poterlo salvare a DB così com'è, non solo
+      // mostrarlo in un popup e buttarlo via. Bug reale scoperto in
+      // produzione (2026-09): controllaStatoDichiarazioneReale salvava
+      // esito_codice/esito_descrizione solo quando ok===true, quindi un 198
+      // restava mostrato una tantum nel dialog d'errore e la riga in DB
+      // continuava a mostrare il vecchio "20" per sempre — il bottone
+      // "Riprova invio" (gated su esitoRichiedeReinvio(esito_codice)) non
+      // compariva mai perché esito_codice non veniva mai aggiornato a "198".
+      codice?: string
+    }
 
 // Tabella codici di stato/errore ADM (manuale operativo, §7 — dichiarazione
 // semestrale energia elettrica). Usata sia per l'esito immediato del metodo
@@ -366,7 +382,13 @@ export function interpretaCodiceStato(codiceGrezzo: string): EsitoControlloStato
   const descrizione = DESCRIZIONE_CODICE[codice] ?? `Codice non riconosciuto: ${codice}`
   const categoria = categorizzaCodice(codice)
   if (categoria) {
-    return { ok: false, categoria, messaggio: descrizione, dettaglioTecnico: `Codice ADM: ${codice}` }
+    return {
+      ok: false,
+      categoria,
+      messaggio: descrizione,
+      dettaglioTecnico: `Codice ADM: ${codice}`,
+      ...(categoria === "esito_negativo" ? { codice } : {}),
+    }
   }
   return { ok: true, codice, descrizione }
 }
