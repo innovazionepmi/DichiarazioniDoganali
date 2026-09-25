@@ -18,6 +18,21 @@ function periodoKey({ anno, mese }: Periodo): number {
   return anno * 12 + mese
 }
 
+// Arrotondamento a 4 decimali (precisione richiesta da ADM per LettA/LettP/
+// DiffLett). Necessario applicarlo PRIMA di calcolare una differenza tra due
+// letture di registro: letturaRegistro somma tante divisioni (kWh/K) in
+// sequenza, quindi il risultato grezzo porta rumore di floating point oltre
+// la 4ª cifra (es. 5697.914399999998). Se si sottraggono i valori grezzi e
+// SOLO ALLA FINE si arrotonda per la stampa XML, il DiffLett scritto può non
+// coincidere più con (LettA stampato − LettP stampato) — esattamente il
+// controllo che ADM fa lato server (errore 00042, scoperto in produzione:
+// XML respinti con scarto di 0.0001 sull'ultimo decimale). Arrotondare prima
+// garantisce che DiffLett = LettA − LettP torni sempre, sui valori che
+// finiscono davvero nell'XML.
+export function round4(value: number): number {
+  return Math.round(value * 10000) / 10000
+}
+
 export function mesePrecedente({ anno, mese }: Periodo): Periodo {
   return mese === 1 ? { anno: anno - 1, mese: 12 } : { anno, mese: mese - 1 }
 }

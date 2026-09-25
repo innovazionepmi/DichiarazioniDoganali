@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
-import { letturaRegistro, mesePrecedente, type LetturaMensile } from "@/lib/calc/registro"
+import { letturaRegistro, mesePrecedente, round4, type LetturaMensile } from "@/lib/calc/registro"
 import {
   generaDichiarazioneEeSemestraleXml,
   parseDichiarazioneEeSemestraleXml,
@@ -145,14 +145,21 @@ export async function generaDichiarazioneSemestrale(
         )
       }
       const kwh = letturaDelMese?.valore_periodo ?? 0
-      const lettP = letturaRegistro(contatore.lettura_iniziale, K, storia, mesePrecedente(periodo))
-      const lettA = letturaRegistro(contatore.lettura_iniziale, K, storia, periodo)
+      // Arrotondare a 4 decimali PRIMA di sottrarre, non dopo: vedi commento
+      // su round4 in lib/calc/registro.ts (bug reale: ADM respingeva le
+      // dichiarazioni con errore 00042, DiffLett non coincideva con
+      // LettA-LettP a causa del rumore di floating point nella somma
+      // progressiva di letturaRegistro).
+      const lettP = round4(
+        letturaRegistro(contatore.lettura_iniziale, K, storia, mesePrecedente(periodo))
+      )
+      const lettA = round4(letturaRegistro(contatore.lettura_iniziale, K, storia, periodo))
       return {
         numMese: periodo.mese,
         matricola: contatore.matricola,
         lettP,
         lettA,
-        diffLett: lettA - lettP,
+        diffLett: round4(lettA - lettP),
         costLett: K,
         kwh,
       }

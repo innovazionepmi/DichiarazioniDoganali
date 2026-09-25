@@ -7,6 +7,7 @@ import {
   mesePrecedente,
   ordineGrandezzaPlausibile,
   riconciliazione,
+  round4,
 } from "./registro"
 
 // Valori di ancoraggio: dataset storico reale fornito dal cliente per
@@ -125,6 +126,44 @@ describe("energiaDaLetturaCumulativa", () => {
 
   it("applica la costante K quando diversa da 1", () => {
     expect(energiaDaLetturaCumulativa(3490, 1165, 25)).toBe(58125)
+  })
+})
+
+// Bug reale in produzione (2026-09-23): ADM ha respinto diverse dichiarazioni
+// con errore 00042 "Importo non valido per il rigo: DiffLett X non
+// corrisponde alla differenza attesa = Y" — sempre uno scarto di 0.0001
+// sull'ultimo decimale (es. cliente CRYOS SRL, XML EE_Semestrale_2026_S1).
+// Causa: lib/actions/dichiarazioni.ts calcolava `diffLett: lettA - lettP` sui
+// valori GREZZI (non arrotondati) restituiti da letturaRegistro — che
+// sommano tante divisioni kWh/K e portano rumore di floating point oltre la
+// 4a cifra decimale — mentre LettA/LettP venivano arrotondati a 4 decimali
+// SOLO al momento di scrivere l'XML (dichiarazione-ee-semestrale.ts,
+// formatLettura). ADM ricalcola DiffLett dai valori LettA/LettP stampati, non
+// da quelli grezzi: quando i due arrotondamenti indipendenti "scivolano" in
+// direzioni diverse, la dichiarazione viene respinta. Il fix è arrotondare
+// LettA/LettP a 4 decimali PRIMA di sottrarli.
+describe("round4", () => {
+  it("arrotonda a 4 decimali", () => {
+    expect(round4(1.00005)).toBe(1.0001)
+    expect(round4(170.3527)).toBe(170.3527)
+  })
+
+  it("riproduce in scala ridotta il bug reale: sottrarre PRIMA di arrotondare può disallinearsi dalla differenza tra i due valori arrotondati stampati in XML", () => {
+    // Stesso meccanismo del caso reale: somme di kWh/K (qui K=3) che non
+    // cadono su un multiplo esatto di 0.0001 in binario.
+    const lettPRaw = 1000 + 2 / 3
+    const lettARaw = 1000 + (2 + 137) / 3
+
+    const diffLettVecchioModo = Number((lettARaw - lettPRaw).toFixed(4))
+    const lettA = round4(lettARaw)
+    const lettP = round4(lettPRaw)
+    const diffLettNuovoModo = round4(lettA - lettP)
+
+    // La vecchia modalità produce un DiffLett che NON torna con LettA-LettP
+    // stampati — esattamente l'errore 00042 di ADM.
+    expect(diffLettVecchioModo).not.toBe(Number((lettA - lettP).toFixed(4)))
+    // La nuova modalità garantisce sempre coerenza con i valori stampati.
+    expect(diffLettNuovoModo).toBe(Number((lettA - lettP).toFixed(4)))
   })
 })
 
