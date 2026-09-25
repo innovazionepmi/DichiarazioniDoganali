@@ -179,9 +179,27 @@ export async function generaDichiarazioneSemestrale(
   // stesso alert già mostrato in /letture, qui blocca la generazione invece
   // di lasciar passare un valore che l'XSD non accetterebbe comunque
   // (kWh non può essere negativo).
+  // Stesso bug di arrotondamento del DiffLett (vedi round4 in lib/calc/
+  // registro.ts), qui sul kWh: il generatore XML (dichiarazione-ee-
+  // semestrale.ts, quadroAXml/quadroGXml) calcola il TotaleMese di A e G
+  // arrotondando OGNI contatore all'intero e SOMMANDO DOPO
+  // (`Math.round(c.kwh)` per riga, poi somma). Se qui si sommano prima i kWh
+  // grezzi (con decimali) e si arrotonda una sola volta alla fine,
+  // l'autoconsumo scritto in Quadro C può non coincidere più con
+  // TotaleMese(A) − TotaleMese(G) stampati — scoperto controllando a mano i
+  // conteggi di XML reali dopo il fix del DiffLett (es. Giorik SPA, mese 2:
+  // A=15055, G=3157, differenza 11898, ma C scriveva 11899). Arrotondare per
+  // contatore PRIMA di sommare, come fa il generatore XML, garantisce che
+  // Quadro C torni sempre con Quadro A − Quadro G.
   const quadroC = mesi.map((periodo, i) => {
-    const produzioneTot = righeProduzionePerMese.reduce((acc, righe) => acc + righe[i].kwh, 0)
-    const immissioneTot = righeCessionePerMese.reduce((acc, righe) => acc + righe[i].kwh, 0)
+    const produzioneTot = righeProduzionePerMese.reduce(
+      (acc, righe) => acc + Math.round(righe[i].kwh),
+      0
+    )
+    const immissioneTot = righeCessionePerMese.reduce(
+      (acc, righe) => acc + Math.round(righe[i].kwh),
+      0
+    )
     const autoconsumo = produzioneTot - immissioneTot
     if (autoconsumo < 0) {
       campiMancanti.push(
