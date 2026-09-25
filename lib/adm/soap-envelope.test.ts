@@ -4,6 +4,7 @@ import {
   categorizzaErroreConnessione,
   costruisciBustaInvio,
   costruisciBustaRecuperaEsito,
+  esitoRichiedeReinvio,
   interpretaCodiceStato,
   interpretaRispostaInvio,
   interpretaRispostaRecuperaEsito,
@@ -151,6 +152,26 @@ describe("categorizzaCodice", () => {
     expect(categorizzaCodice("10")).toBe("xml_malformato")
     expect(categorizzaCodice("197")).toBe("esito_negativo")
     expect(categorizzaCodice("9999")).toBe("altro")
+  })
+})
+
+// Bug reale in produzione (2026-09): il bottone "Riprova invio" nella UI
+// (dichiarazione-section.tsx) era nascosto per stato==="inviata" a
+// prescindere dall'esito sostanziale. Una dichiarazione con trasporto SOAP
+// accettato (codice 20, che marca stato="inviata") ma poi respinta con 198
+// non era più reinviabile — l'operatore non aveva modo di correggere e
+// rimandare dalla UI.
+describe("esitoRichiedeReinvio", () => {
+  it("richiede reinvio per un esito respinto nel merito (197/198)", () => {
+    expect(esitoRichiedeReinvio("197")).toBe(true)
+    expect(esitoRichiedeReinvio("198")).toBe(true)
+  })
+
+  it("non richiede reinvio per un esito accolto/in corso/senza esito ancora noto", () => {
+    expect(esitoRichiedeReinvio("20")).toBe(false)
+    expect(esitoRichiedeReinvio("200")).toBe(false)
+    expect(esitoRichiedeReinvio(null)).toBe(false)
+    expect(esitoRichiedeReinvio(undefined)).toBe(false)
   })
 })
 

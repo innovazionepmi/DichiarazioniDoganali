@@ -38,6 +38,7 @@ import {
   inviaRicevutaClienteEmail,
 } from "@/lib/actions/dichiarazioni"
 import { scaricaDocumento } from "@/lib/actions/documenti"
+import { esitoRichiedeReinvio } from "@/lib/adm/soap-envelope"
 import { InvioDichiarazioneDialog } from "@/components/impianti/invio-dichiarazione-dialog"
 import { DettaglioEsitoDialog } from "@/components/impianti/dettaglio-esito-dialog"
 import {
@@ -232,9 +233,13 @@ export function DichiarazioneSection({
                     {d.anno} — {d.periodo_riferimento}° semestre
                   </TableCell>
                   <TableCell>
-                    <Badge variant={d.stato === "inviata" ? "success" : "outline"}>
-                      {d.stato === "inviata" ? "Inviata" : "Generata"}
-                    </Badge>
+                    {esitoRichiedeReinvio(d.esito_codice) ? (
+                      <Badge variant="destructive">Respinta</Badge>
+                    ) : (
+                      <Badge variant={d.stato === "inviata" ? "success" : "outline"}>
+                        {d.stato === "inviata" ? "Inviata" : "Generata"}
+                      </Badge>
+                    )}
                   </TableCell>
                   <TableCell>
                     {new Date(d.data_generazione).toLocaleDateString("it-IT")}
@@ -322,15 +327,16 @@ export function DichiarazioneSection({
                           Anteprima PDF
                         </Button>
                       )}
-                      {d.documento_xml_id && d.stato !== "inviata" && (
-                        <Button
-                          size="sm"
-                          disabled={pending}
-                          onClick={() => setInvioDichiarazioneId(d.id)}
-                        >
-                          {d.iut ? "Riprova invio" : "Invia dichiarazione"}
-                        </Button>
-                      )}
+                      {d.documento_xml_id &&
+                        (d.stato !== "inviata" || esitoRichiedeReinvio(d.esito_codice)) && (
+                          <Button
+                            size="sm"
+                            disabled={pending}
+                            onClick={() => setInvioDichiarazioneId(d.id)}
+                          >
+                            {d.iut ? "Riprova invio" : "Invia dichiarazione"}
+                          </Button>
+                        )}
                       {d.iut && (
                         <Button
                           variant="outline"

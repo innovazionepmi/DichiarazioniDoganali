@@ -52,6 +52,19 @@ export function categorizzaCodice(codice: string): CategoriaErroreAdm | null {
   return "altro"
 }
 
+// Un esito 197/198 significa che ADM ha accettato il trasporto SOAP
+// (codice 20, "Acquisito a sistema" — questo è quanto basta per marcare la
+// dichiarazione `stato="inviata"` in dichiarazioni_ee_semestrali) ma poi ha
+// respinto la dichiarazione nel merito in elaborazione asincrona: va
+// corretta e reinviata, non è uno stato terminale come 199/200. Bug reale
+// scoperto in produzione (2026-09): il bottone di invio in
+// dichiarazione-section.tsx era nascosto per `stato==="inviata"` a
+// prescindere dall'esito sostanziale, quindi una dichiarazione respinta con
+// 198 non era più reinviabile dalla UI.
+export function esitoRichiedeReinvio(codice: string | null | undefined): boolean {
+  return codice != null && CODICI_ESITO_NEGATIVO.has(codice)
+}
+
 // Errori a livello di connessione TLS/rete: distinguiamo certificato (chiave
 // errata, cifratura corrotta, CA non riconosciuta) da problemi di rete puri
 // (host irraggiungibile, timeout) in base al codice errore di Node — non è
