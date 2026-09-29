@@ -92,8 +92,10 @@ describe("generaDichiarazioneEeSemestraleXml", () => {
       expect(xml).toContain(`<Mese NumMese="${mese}">`);
     }
     expect(xml).toContain("<Matr>PROD001</Matr>");
-    // Mese 1: LettP=0, LettA=100, DiffLett=100.0000, kWh=100
-    expect(xml).toContain("<LettP>0.0000</LettP>");
+    // Mese 1: LettP=0, LettA=100, DiffLett=100.0000, kWh=100 — LettP allineata
+    // a 3 cifre intere come LettA (stesso numero di cifre richiesto da ADM,
+    // errore [00022]).
+    expect(xml).toContain("<LettP>000.0000</LettP>");
     expect(xml).toContain("<LettA>100.0000</LettA>");
     expect(xml).toContain("<DiffLett>100.0000</DiffLett>");
     expect(xml).toContain("<CostLett>1.0000</CostLett>");
@@ -157,6 +159,35 @@ describe("generaDichiarazioneEeSemestraleXml", () => {
     };
     const xml = generaDichiarazioneEeSemestraleXml(input);
     expect(xml).toContain("<kWh>101</kWh>");
+  });
+
+  it("allinea LettA/LettP allo stesso numero di cifre intere quando la lettura attraversa una potenza di 10 (errore ADM [00022])", () => {
+    // Caso reale: Gastronomia Fontebasso, Quadro G mese 5 — LettP=987.9308
+    // (3 cifre), LettA=1107.6013 (4 cifre): ADM respinge in sostanziale
+    // (198) perché "LettA e LettP devono avere lo stesso numero di cifre
+    // intere". Zero a sinistra sul valore più corto, valore numerico
+    // invariato.
+    const input: DichiarazioneEeSemestraleInput = {
+      ...INPUT_SINTETICO,
+      quadroG: INPUT_SINTETICO.quadroG!.map((mese, i) =>
+        i === 4
+          ? {
+              ...mese,
+              contatori: [
+                {
+                  ...mese.contatori[0],
+                  lettP: 987.9308,
+                  lettA: 1107.6013,
+                  diffLett: 119.6705,
+                },
+              ],
+            }
+          : mese,
+      ),
+    };
+    const xml = generaDichiarazioneEeSemestraleXml(input);
+    expect(xml).toContain("<LettP>0987.9308</LettP>");
+    expect(xml).toContain("<LettA>1107.6013</LettA>");
   });
 
   it("rifiuta un codice ditta malformato", () => {
