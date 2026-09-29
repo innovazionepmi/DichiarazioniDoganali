@@ -182,14 +182,20 @@ export function LettureTable({
 
   // Lettura di registro nota immediatamente prima di `mese`, dentro alla
   // griglia in modifica: l'ultimo valore digitato nei mesi precedenti (per
-  // gestire mesi saltati/non ancora inseriti), altrimenti la lettura
-  // iniziale dell'anno (31/12 anno precedente).
+  // gestire mesi saltati/non ancora inseriti), altrimenti la "Lettura
+  // iniziale" così come si trova ORA nel box editabile (non il vecchio
+  // valore a DB): se l'operatore sta impostando lettura iniziale e Gennaio
+  // nella stessa sessione (contatore nuovo), il delta di Gennaio deve
+  // partire dal valore appena digitato, non da quello precedente (spesso
+  // 0 per un contatore mai configurato) — altrimenti il delta include per
+  // errore l'intera lettura iniziale (bug reale: Povegliano Palestra,
+  // lettura progressiva raddoppiata dopo il salvataggio).
   function letturaPrecedenteAlMese(c: ContatoreLetture, mese: number): number {
     for (let m = mese - 1; m >= 1; m--) {
       const valore = grigliaCumulativa[chiave(c.id, m)]
       if (valore) return numero(valore)
     }
-    return calcolaLetturaInizialeDefault(c)
+    return numero(letturaInizialeInput[c.id] ?? "")
   }
 
   function valorePeriodo(c: ContatoreLetture, mese: number): number {
@@ -254,8 +260,13 @@ export function LettureTable({
         // In ordine di mese: ogni delta è relativo all'ultima lettura nota
         // (digitata qui o, se il mese è il primo della sequenza, la lettura
         // iniziale dell'anno) — stesso ordine con cui l'operatore le legge
-        // dal contatore fisico.
-        let letturaPrecedente = calcolaLetturaInizialeDefault(c)
+        // dal contatore fisico. Il seed usa il box "Lettura iniziale" così
+        // com'è ORA (non calcolaLetturaInizialeDefault, che riflette ancora
+        // il vecchio valore a DB): altrimenti, compilando lettura iniziale e
+        // Gennaio nello stesso salvataggio, il delta di Gennaio verrebbe
+        // calcolato contro il vecchio valore (spesso 0) invece di quello
+        // appena digitato, raddoppiando la lettura progressiva salvata.
+        let letturaPrecedente = numero(letturaInizialeInput[c.id] ?? "")
         const righeContatore: NonNullable<ReturnType<typeof rigaCumulativa>>[] = []
         function rigaCumulativa(mese: number) {
           const valore = grigliaCumulativa[chiave(c.id, mese)]
