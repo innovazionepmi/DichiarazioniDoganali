@@ -37,6 +37,25 @@ function formatLettura(value: number): string {
   return value.toFixed(4);
 }
 
+// ADM (elaborazione sostanziale, errore [00022]) respinge una riga se LettA e
+// LettP non hanno lo STESSO numero di cifre intere — un vincolo che un
+// contatore reale viola inevitabilmente ogni volta che la lettura cumulativa
+// attraversa una potenza di 10 nel corso del mese (es. LettP=987.93,
+// LettA=1107.60: 3 cifre contro 4). Non è un errore nei dati — è solo che
+// `toFixed(4)` non aggiunge zeri a sinistra. Casi reali osservati: ALTHEA
+// (Quadro A/G) e Gastronomia Fontebasso (Quadro G, mese 5, 987→1107).
+// Allineare le due letture alla stessa larghezza (zero a sinistra sul valore
+// più corto) non cambia il valore numerico, soddisfa il controllo ADM, ed è
+// comunque coerente con come si legge un contatore fisico a cifre fisse.
+function cifreIntere(value: number): number {
+  return Math.max(1, Math.trunc(value).toString().length);
+}
+
+function formatLetturaAllineata(value: number, cifre: number): string {
+  const [parteIntera, parteDecimale] = value.toFixed(4).split(".");
+  return `${parteIntera.padStart(cifre, "0")}.${parteDecimale}`;
+}
+
 function formatCostante(value: number): string {
   return value.toFixed(4);
 }
@@ -49,11 +68,12 @@ type ContatoreRiga =
   DichiarazioneEeSemestraleInput["quadroA"][number]["contatori"][number];
 
 function contatoreProduzioneXml(c: ContatoreRiga): string {
+  const cifre = Math.max(cifreIntere(c.lettA), cifreIntere(c.lettP));
   return (
     `<Contatore>` +
     el("Matr", c.matricola) +
-    el("LettA", formatLettura(c.lettA)) +
-    el("LettP", formatLettura(c.lettP)) +
+    el("LettA", formatLetturaAllineata(c.lettA, cifre)) +
+    el("LettP", formatLetturaAllineata(c.lettP, cifre)) +
     el("DiffLett", formatLettura(c.diffLett)) +
     el("CostLett", formatCostante(c.costLett)) +
     el("kWh", formatKwh(c.kwh)) +
@@ -66,13 +86,14 @@ type ContatoreCedutaRiga = NonNullable<
 >[number]["contatori"][number];
 
 function contatoreCedutaXml(c: ContatoreCedutaRiga): string {
+  const cifre = Math.max(cifreIntere(c.lettA), cifreIntere(c.lettP));
   return (
     `<Contatore>` +
     el("Tipo", c.tipo) +
     el("Id", c.id) +
     el("Matr", c.matricola) +
-    el("LettA", formatLettura(c.lettA)) +
-    el("LettP", formatLettura(c.lettP)) +
+    el("LettA", formatLetturaAllineata(c.lettA, cifre)) +
+    el("LettP", formatLetturaAllineata(c.lettP, cifre)) +
     el("DiffLett", formatLettura(c.diffLett)) +
     el("CostLett", formatCostante(c.costLett)) +
     el("Kwh", formatKwh(c.kwh)) +
