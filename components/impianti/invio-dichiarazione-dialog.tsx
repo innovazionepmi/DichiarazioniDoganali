@@ -145,7 +145,7 @@ export function InvioDichiarazioneDialog({
               </div>
 
               <div className="grid gap-1.5">
-                <Label htmlFor="dichiarante">Codice fiscale/P.IVA del dichiarante</Label>
+                <Label htmlFor="dichiarante">Codice fiscale del dichiarante (non la P.IVA)</Label>
                 <Input
                   id="dichiarante"
                   value={dichiarante}

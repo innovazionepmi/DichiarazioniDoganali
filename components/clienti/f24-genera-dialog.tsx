@@ -147,7 +147,7 @@ export function F24GeneraDialog({
                   <TableRow>
                     <TableHead />
                     <TableHead>Impianto</TableHead>
-                    <TableHead>Codice F24</TableHead>
+                    <TableHead>Codice ditta/licenza</TableHead>
                     <TableHead>Importo</TableHead>
                   </TableRow>
                 </TableHeader>

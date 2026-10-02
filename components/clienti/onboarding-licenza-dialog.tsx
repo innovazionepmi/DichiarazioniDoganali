@@ -482,7 +482,7 @@ export function OnboardingLicenzaDialog() {
                       name="codice_impianto_f24"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Codice impianto (per F24)</FormLabel>
+                          <FormLabel>Codice ditta/licenza/identificativo</FormLabel>
                           <FormControl>
                             <Input {...field} />
                           </FormControl>

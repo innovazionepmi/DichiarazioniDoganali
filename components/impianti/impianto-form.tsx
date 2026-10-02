@@ -367,7 +367,7 @@ export function ImpiantoForm({
             name="codice_impianto_f24"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Codice identificativo F24</FormLabel>
+                <FormLabel>Codice ditta/licenza/identificativo</FormLabel>
                 <FormControl>
                   <Input {...field} />
                 </FormControl>

@@ -403,7 +403,13 @@ export async function recuperaRiepilogoDichiarazione(
     dati,
     impiantoNome: impianto.nome_impianto,
     clienteRagioneSociale: cliente?.ragione_sociale ?? "",
-    dichiaranteSuggerito: cliente?.partita_iva || cliente?.codice_fiscale || "",
+    // ADM (risposta assistenza, 2026-10) vuole nel campo <dichiarante> della
+    // busta SOAP il CODICE FISCALE della società, non la P.IVA: i due
+    // coincidono per le società di capitali (per questo i clienti "ok"
+    // funzionavano) ma divergono per enti/comuni/ditte individuali. Il
+    // CodDitta nell'XML firmato non c'entra: il dichiarante vive solo nella
+    // busta SOAP, che costruiamo noi.
+    dichiaranteSuggerito: cliente?.codice_fiscale || cliente?.partita_iva || "",
   }
 }
 
