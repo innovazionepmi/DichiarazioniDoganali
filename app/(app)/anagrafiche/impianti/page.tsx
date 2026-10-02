@@ -2,6 +2,7 @@ import Link from "next/link"
 import { createClient } from "@/lib/supabase/server"
 import { Button } from "@/components/ui/button"
 import { ImpiantoTable } from "@/components/impianti/impianto-table"
+import { SezioneArchiviati } from "@/components/shared/sezione-archiviati"
 import {
   PartnerFilter,
   PARTNER_FILTER_DIRETTI,
@@ -44,6 +45,13 @@ export default async function ImpiantiListPage({
     return <p className="text-destructive">Errore nel caricamento: {error.message}</p>
   }
 
+  const righe = (impianti ?? []).map((i) => ({
+    ...i,
+    cliente: Array.isArray(i.cliente) ? i.cliente[0] ?? null : i.cliente,
+  }))
+  const attivi = righe.filter((i) => i.attivo)
+  const archiviati = righe.filter((i) => !i.attivo)
+
   return (
     <div className="grid gap-4">
       <div className="flex items-center justify-between">
@@ -54,12 +62,10 @@ export default async function ImpiantiListPage({
         />
       </div>
       <PartnerFilter partnerOptions={partnerOptions ?? []} />
-      <ImpiantoTable
-        data={(impianti ?? []).map((i) => ({
-          ...i,
-          cliente: Array.isArray(i.cliente) ? i.cliente[0] ?? null : i.cliente,
-        }))}
-      />
+      <ImpiantoTable data={attivi} />
+      <SezioneArchiviati count={archiviati.length}>
+        <ImpiantoTable data={archiviati} />
+      </SezioneArchiviati>
     </div>
   )
 }

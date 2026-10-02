@@ -103,6 +103,19 @@ export function SelettoreIndirizzo<T extends FieldValues>({
 
   const comuneCorrente = comuni.find((c) => c.nome === form.watch(campoCitta))
 
+  // Il codice catastale è funzione del comune: lo riallineiamo ogni volta che
+  // il comune corrente cambia, non solo quando l'operatore lo sceglie a mano
+  // dalla tendina. Prima veniva scritto solo in selezionaComune, quindi
+  // restava vuoto quando la città arrivava da un'altra strada (indirizzo
+  // copiato dal cliente, impianto già salvato con città ma senza catastale).
+  const codiceCatastaleCorrente = comuneCorrente?.codice_catastale
+  useEffect(() => {
+    if (!campoCodiceCatastale || !codiceCatastaleCorrente) return
+    if (form.getValues(campoCodiceCatastale) === codiceCatastaleCorrente) return
+    form.setValue(campoCodiceCatastale, codiceCatastaleCorrente as never, { shouldDirty: true })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [codiceCatastaleCorrente, campoCodiceCatastale])
+
   const itemsProvincia: ItemProvincia[] = province.map((p) => ({
     value: p.sigla,
     label: `${p.nome} (${p.sigla})`,

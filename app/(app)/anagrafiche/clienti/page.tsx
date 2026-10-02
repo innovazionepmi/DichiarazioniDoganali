@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server"
 import { Button } from "@/components/ui/button"
 import { ClienteTable } from "@/components/clienti/cliente-table"
 import { OnboardingLicenzaDialog } from "@/components/clienti/onboarding-licenza-dialog"
+import { SezioneArchiviati } from "@/components/shared/sezione-archiviati"
 import {
   PartnerFilter,
   PARTNER_FILTER_DIRETTI,
@@ -42,6 +43,13 @@ export default async function ClientiListPage({
     return <p className="text-destructive">Errore nel caricamento: {error.message}</p>
   }
 
+  const righe = (clienti ?? []).map((c) => ({
+    ...c,
+    partner: Array.isArray(c.partner) ? c.partner[0] ?? null : c.partner,
+  }))
+  const attivi = righe.filter((c) => c.attivo)
+  const archiviati = righe.filter((c) => !c.attivo)
+
   return (
     <div className="grid gap-4">
       <div className="flex items-center justify-between">
@@ -55,12 +63,10 @@ export default async function ClientiListPage({
         </div>
       </div>
       <PartnerFilter partnerOptions={partnerOptions ?? []} />
-      <ClienteTable
-        data={(clienti ?? []).map((c) => ({
-          ...c,
-          partner: Array.isArray(c.partner) ? c.partner[0] ?? null : c.partner,
-        }))}
-      />
+      <ClienteTable data={attivi} />
+      <SezioneArchiviati count={archiviati.length}>
+        <ClienteTable data={archiviati} />
+      </SezioneArchiviati>
     </div>
   )
 }

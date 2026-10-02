@@ -10,6 +10,7 @@ import { isEmailConfigured } from "@/lib/email/client"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
+import { SezioneArchiviati } from "@/components/shared/sezione-archiviati"
 
 export default async function ClienteDetailPage({
   params,
@@ -124,22 +125,32 @@ export default async function ClienteDetailPage({
           />
         </div>
         {impianti && impianti.length > 0 ? (
-          <ul className="grid gap-2">
-            {impianti.map((impianto) => (
-              <li key={impianto.id}>
-                <Link
-                  href={`/anagrafiche/impianti/${impianto.id}`}
-                  className="flex items-center gap-2 rounded-md border px-3 py-2 hover:bg-muted"
-                >
-                  <span className="font-medium">{impianto.nome_impianto}</span>
-                  <Badge variant="outline">{impianto.tipo_soggetto}</Badge>
-                  {!impianto.attivo && (
-                    <Badge variant="secondary">Archiviato</Badge>
-                  )}
-                </Link>
-              </li>
-            ))}
-          </ul>
+          <div className="grid gap-3">
+            {[true, false].map((attivi) => {
+              const gruppo = impianti.filter((i) => i.attivo === attivi)
+              const lista = (
+                <ul className="grid gap-2">
+                  {gruppo.map((impianto) => (
+                    <li key={impianto.id}>
+                      <Link
+                        href={`/anagrafiche/impianti/${impianto.id}`}
+                        className="flex items-center gap-2 rounded-md border px-3 py-2 hover:bg-muted"
+                      >
+                        <span className="font-medium">{impianto.nome_impianto}</span>
+                        <Badge variant="outline">{impianto.tipo_soggetto}</Badge>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              )
+              if (attivi) return gruppo.length > 0 ? <div key="attivi">{lista}</div> : null
+              return (
+                <SezioneArchiviati key="archiviati" count={gruppo.length}>
+                  {lista}
+                </SezioneArchiviati>
+              )
+            })}
+          </div>
         ) : (
           <p className="text-sm text-muted-foreground">
             Nessun impianto collegato a questo cliente.
