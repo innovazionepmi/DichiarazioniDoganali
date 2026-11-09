@@ -1,11 +1,16 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import {
+  FileSpreadsheet,
+  FileText,
+  Image as ImageIcon,
+  Upload,
+  X,
+} from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -93,6 +98,37 @@ function isExcel(file: File): boolean {
   );
 }
 
+type TipoFile = "pdf" | "immagine" | "excel";
+
+function tipoFile(file: File): TipoFile | null {
+  if (isExcel(file)) return "excel";
+  if (
+    file.type === "application/pdf" ||
+    file.name.toLowerCase().endsWith(".pdf")
+  )
+    return "pdf";
+  if (["image/png", "image/jpeg", "image/webp"].includes(file.type))
+    return "immagine";
+  return null;
+}
+
+const TIPO_FILE_LABEL: Record<TipoFile, string> = {
+  pdf: "PDF",
+  immagine: "Screenshot",
+  excel: "Excel",
+};
+
+function dimensioneLeggibile(bytes: number): string {
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function stessoFile(a: File, b: File): boolean {
+  return (
+    a.name === b.name && a.size === b.size && a.lastModified === b.lastModified
+  );
+}
+
 // Anteprima prima di scrivere (decisione esplicita dell'utente): il parsing
 // non tocca mai `letture` — solo dopo che Paolo conferma riga per riga,
 // tramite upsertLetture riusata con l'origine di ciascun file. Le righe già
@@ -118,6 +154,12 @@ export function ImportaPdfDialog({
   const [progresso, setProgresso] = useState<string | null>(null);
   const [analisi, setAnalisi] = useState<AnalisiMulti | null>(null);
   const [selezionate, setSelezionate] = useState<Set<number>>(new Set());
+  // Elenco cumulativo: il campo file nativo sostituisce la selezione a ogni
+  // apertura, quindi non permette di mettere insieme file di cartelle
+  // diverse. Teniamo noi l'elenco e il campo serve solo da "aggiungi".
+  const [files, setFiles] = useState<File[]>([]);
+  const [trascinando, setTrascinando] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   function handleOpenChange(nextOpen: boolean) {
     setOpen(nextOpen);
@@ -125,22 +167,56 @@ export function ImportaPdfDialog({
       setAnalisi(null);
       setSelezionate(new Set());
       setProgresso(null);
+      setFiles([]);
+      setTrascinando(false);
     }
   }
 
-  function handleAnalizza(formData: FormData) {
-    const files = formData
-      .getAll("file")
-      .filter((f): f is File => f instanceof File && f.size > 0);
-
-    if (files.length === 0) {
-      toast.error("Nessun file selezionato");
-      return;
-    }
-    if (files.length > MAX_FILE_PER_IMPORT) {
+  function aggiungiFile(nuovi: File[]) {
+    const supportati = nuovi.filter((f) => tipoFile(f) !== null);
+    const scartati = nuovi.length - supportati.length;
+    if (scartati > 0) {
       toast.error(
-        `Puoi importare al massimo ${MAX_FILE_PER_IMPORT} file alla volta`,
+        scartati === 1
+          ? "1 file ignorato: formato non supportato (servono PDF, immagini PNG/JPEG/WebP o Excel .xlsx)"
+          : `${scartati} file ignorati: formato non supportato (servono PDF, immagini PNG/JPEG/WebP o Excel .xlsx)`,
       );
+    }
+
+    const next = [...files];
+    let giaPresenti = 0;
+    let troppi = false;
+    for (const file of supportati) {
+      if (next.some((p) => stessoFile(p, file))) {
+        giaPresenti++;
+      } else if (next.length < MAX_FILE_PER_IMPORT) {
+        next.push(file);
+      } else {
+        troppi = true;
+      }
+    }
+    if (troppi) {
+      toast.error(
+        `Puoi importare al massimo ${MAX_FILE_PER_IMPORT} file alla volta: i file in eccesso non sono stati aggiunti`,
+      );
+    }
+    if (giaPresenti > 0) {
+      toast.message(
+        giaPresenti === 1
+          ? "1 file era già nell'elenco"
+          : `${giaPresenti} file erano già nell'elenco`,
+      );
+    }
+    setFiles(next);
+  }
+
+  function rimuoviFile(index: number) {
+    setFiles((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  function handleAnalizza() {
+    if (files.length === 0) {
+      toast.error("Aggiungi almeno un file");
       return;
     }
 
@@ -309,36 +385,135 @@ export function ImportaPdfDialog({
           </DialogHeader>
 
           {!analisi ? (
-            <form action={handleAnalizza} className="grid gap-4">
-              <div className="grid gap-2">
-                <Label htmlFor="file">
-                  File PDF (stampa pagina E-distribuzione), screenshot
-                  (PNG/JPEG) o registro letture Excel (.xlsx)
-                </Label>
-                <Input
-                  id="file"
-                  name="file"
-                  type="file"
-                  multiple
-                  accept="application/pdf,image/png,image/jpeg,image/webp,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                  required
-                />
-                <p className="text-xs text-muted-foreground">
-                  Puoi selezionare più file insieme (fino a{" "}
-                  {MAX_FILE_PER_IMPORT}), anche di tipo diverso: ad esempio un
-                  PDF per ciascun contatore dell&apos;impianto. PDF ed Excel
-                  vengono letti in modo esatto; uno screenshot viene letto con
-                  un&apos;intelligenza artificiale — controlla sempre i valori
-                  prima di confermare. Il file Excel può essere lo stesso
-                  registro letture già in uso per il cliente: viene abbinato ai
-                  contatori di questo impianto per tipo
-                  (produzione/immissione).
-                </p>
-              </div>
-              <Button type="submit" disabled={pending} className="w-fit">
-                {pending ? (progresso ?? "Analisi in corso…") : "Analizza"}
+            <div className="grid gap-4">
+              <input
+                ref={inputRef}
+                type="file"
+                multiple
+                hidden
+                accept="application/pdf,image/png,image/jpeg,image/webp,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                onChange={(e) => {
+                  aggiungiFile(Array.from(e.target.files ?? []));
+                  // Azzera il campo: così si può riselezionare lo stesso file
+                  // dopo averlo rimosso dall'elenco.
+                  e.target.value = "";
+                }}
+              />
+
+              <p className="text-sm">
+                <strong>1.</strong> Aggiungi i file da importare (anche da
+                cartelle diverse, uno alla volta o più insieme).{" "}
+                <strong>2.</strong> Premi &quot;Analizza&quot;: vedrai
+                un&apos;anteprima unica da confermare.
+              </p>
+
+              <button
+                type="button"
+                disabled={pending}
+                onClick={() => inputRef.current?.click()}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setTrascinando(true);
+                }}
+                onDragLeave={() => setTrascinando(false)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setTrascinando(false);
+                  aggiungiFile(Array.from(e.dataTransfer.files));
+                }}
+                className={`flex flex-col items-center gap-2 rounded-md border-2 border-dashed p-6 text-center text-sm transition-colors hover:bg-muted/50 disabled:opacity-50 ${
+                  trascinando ? "border-primary bg-muted/50" : "border-input"
+                }`}
+              >
+                <Upload className="size-6 text-muted-foreground" />
+                <span className="font-medium">
+                  {files.length === 0
+                    ? "Clicca per scegliere i file, o trascinali qui"
+                    : "Aggiungi altri file (clicca o trascina qui)"}
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  PDF (stampa pagina E-distribuzione), screenshot PNG/JPEG/WebP
+                  o registro letture Excel (.xlsx) — fino a{" "}
+                  {MAX_FILE_PER_IMPORT} file
+                </span>
+              </button>
+
+              {files.length > 0 && (
+                <div className="grid gap-2">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="font-medium">
+                      File da importare ({files.length}/{MAX_FILE_PER_IMPORT})
+                    </span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      disabled={pending}
+                      onClick={() => setFiles([])}
+                    >
+                      Svuota elenco
+                    </Button>
+                  </div>
+                  <ul className="divide-y rounded-md border">
+                    {files.map((file, index) => {
+                      const tipo = tipoFile(file);
+                      const Icona =
+                        tipo === "excel"
+                          ? FileSpreadsheet
+                          : tipo === "immagine"
+                            ? ImageIcon
+                            : FileText;
+                      return (
+                        <li
+                          key={`${file.name}-${file.size}-${file.lastModified}`}
+                          className="flex items-center gap-3 px-3 py-2 text-sm"
+                        >
+                          <Icona className="size-4 shrink-0 text-muted-foreground" />
+                          <span className="min-w-0 flex-1 truncate">
+                            {file.name}
+                          </span>
+                          <span className="shrink-0 text-xs text-muted-foreground">
+                            {tipo ? TIPO_FILE_LABEL[tipo] : ""} ·{" "}
+                            {dimensioneLeggibile(file.size)}
+                          </span>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon-sm"
+                            disabled={pending}
+                            aria-label={`Rimuovi ${file.name}`}
+                            onClick={() => rimuoviFile(index)}
+                          >
+                            <X />
+                          </Button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              )}
+
+              <p className="text-xs text-muted-foreground">
+                PDF ed Excel vengono letti in modo esatto; uno screenshot viene
+                letto con un&apos;intelligenza artificiale — controlla sempre i
+                valori prima di confermare. Il file Excel può essere lo stesso
+                registro letture già in uso per il cliente: viene abbinato ai
+                contatori di questo impianto per tipo (produzione/immissione).
+              </p>
+
+              <Button
+                type="button"
+                onClick={handleAnalizza}
+                disabled={pending || files.length === 0}
+                className="w-fit"
+              >
+                {pending
+                  ? (progresso ?? "Analisi in corso…")
+                  : files.length <= 1
+                    ? "Analizza"
+                    : `Analizza ${files.length} file`}
               </Button>
-            </form>
+            </div>
           ) : (
             <div className="grid gap-4">
               <ul className="grid gap-1 text-sm text-muted-foreground">
@@ -514,10 +689,13 @@ export function ImportaPdfDialog({
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={() => setAnalisi(null)}
+                  onClick={() => {
+                    setAnalisi(null);
+                    setFiles([]);
+                  }}
                   disabled={pending}
                 >
-                  Analizza altri file
+                  Importa altri file
                 </Button>
               </div>
             </div>
